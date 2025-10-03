@@ -10,7 +10,7 @@ import (
 )
 
 // TestDescribeStreamConnectionClosed simulates a server that accepts a TCP connection
-// but closes it before responding to DESCRIBE, triggering connection_closed classification.
+// but closes it before responding to DESCRIBE, triggering connection closed error.
 func TestDescribeStreamConnectionClosed(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -57,14 +57,22 @@ func TestDescribeStreamConnectionClosed(t *testing.T) {
 	}()
 
 	url := "rtsp://" + addr + "/closed"
-	info, _ := DescribeStream(context.Background(), url, 1500*time.Millisecond)
-	if info.Failure() != "connection_closed" && info.Failure() != "timeout" { // allow timeout fallback on slow systems
-		t.Fatalf("expected connection_closed or timeout, got %q (err=%s)", info.Failure(), info.Error())
+	info, err := DescribeStream(context.Background(), url, 1500*time.Millisecond)
+
+	// Should get an error for connection closure
+	if err == nil {
+		t.Fatalf("expected connection closed error, got success")
 	}
+
+	// But should still have info about reachability
+	if info == nil {
+		t.Fatalf("expected info to be available even with connection failure")
+	}
+
 	if info.IsReachable() == false { // preflight dial should have succeeded
 		t.Fatalf("expected reachable=true prior to closure")
 	}
-	if info.DescribeSucceeded() {
-		t.Fatalf("did not expect describe success after closure")
+	if info.IsDescribeSucceeded() {
+		t.Fatalf("expected describe failure on forcibly closed connection")
 	}
 }

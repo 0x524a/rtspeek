@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
-	rtpeek "github.com/example/rtspeek/pkg/rtspeek"
+	rtpeek "github.com/0x524A/rtspeek/pkg/rtspeek"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -20,79 +20,85 @@ func main() {
 			&cli.DurationFlag{Name: "timeout", Usage: "Timeout for describe", Value: 5 * time.Second},
 			&cli.BoolFlag{Name: "pretty", Usage: "Pretty-print JSON output", Value: true},
 			&cli.BoolFlag{Name: "verbose", Usage: "Include failure reason on stderr"},
-			&cli.BoolFlag{Name: "debug", Usage: "Emit RTSP request/response headers into debug_trace"},
+			&cli.BoolFlag{Name: "debug", Usage: "Enable debug logging (legacy compatibility)"},
+			&cli.StringFlag{Name: "log-level", Usage: "Log level: disabled, error, warn, info, debug, trace", Value: "disabled"},
+			&cli.BoolFlag{Name: "log-console", Usage: "Enable pretty console logging to stderr", Value: false},
 		},
 		Action: func(c *cli.Context) error {
 			url := c.String("url")
 			timeout := c.Duration("timeout")
+			pretty := c.Bool("pretty")
+			verbose := c.Bool("verbose")
+			debug := c.Bool("debug")
+			logLevel := c.String("log-level")
+			logConsole := c.Bool("log-console")
+
+			// Setup output formatter
+			outputFormatter := NewOutputFormatter(os.Stdout, pretty)
+
+			// Setup logging
+			var logger *rtpeek.Logger
+			if logLevel != "disabled" {
+				level := parseLogLevel(logLevel)
+				if logConsole {
+					logger = rtpeek.NewLogger(level, os.Stderr, true)
+				}
+			}
+
+			// Setup context - support both new logging and legacy debug
 			ctx := context.Background()
-			if c.Bool("debug") {
+			if debug || (logger != nil) {
 				ctx = rtpeek.WithDebug(ctx)
 			}
+			if logger != nil {
+				ctx = rtpeek.WithLogger(ctx, logger)
+			}
+
+			// Perform RTSP describe operation
 			info, err := rtpeek.DescribeStream(ctx, url, timeout)
 			if err != nil {
-				// For invalid URL just surface minimal JSON with error
-				if err == rtpeek.ErrInvalidURL {
-					enc := json.NewEncoder(os.Stdout)
-					if c.Bool("pretty") {
-						enc.SetIndent("", "  ")
-					}
-					_ = enc.Encode(map[string]any{
-						"url":            url,
-						"describe_ok":    false,
-						"failure_reason": "invalid_url",
-						"error_message":  err.Error(),
-					})
-					return nil
+				// Print verbose error information to stderr if requested
+				if verbose {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
-				if err != rtpeek.ErrDescribeFailed {
-					return fmt.Errorf("describe error: %w", err)
+
+				// For partial results (connection successful but RTSP failed), output the info
+				if info != nil {
+					return outputFormatter.WriteStreamInfo(info)
 				}
+
+				// For complete failures, output error JSON
+				return outputFormatter.WriteErrorOutput(url, err)
 			}
-			if info != nil && c.Bool("verbose") && info.Failure() != "" {
-				fmt.Fprintf(os.Stderr, "failure: %s (%s)\n", info.Failure(), info.Error())
+
+			// Write main JSON output to stdout
+			if err := outputFormatter.WriteStreamInfo(info); err != nil {
+				return fmt.Errorf("output formatting failed: %w", err)
 			}
-			enc := json.NewEncoder(os.Stdout)
-			if c.Bool("pretty") {
-				enc.SetIndent("", "  ")
-			}
-			if info == nil {
-				return nil // already emitted minimal JSON for invalid URL
-			}
-			out := map[string]any{
-				"url":         info.URLString(),
-				"reachable":   info.IsReachable(),
-				"protocol":    info.ProtocolName(),
-				"describe_ok": info.DescribeSucceeded(),
-				"latency":     info.LatencyMs(),
-				"media_count": info.MediaTotal(),
-			}
-			if v := info.Video(); len(v) > 0 {
-				out["video_medias"] = v
-			}
-			if a := info.Audio(); len(a) > 0 {
-				out["audio_medias"] = a
-			}
-			if o := info.Other(); len(o) > 0 {
-				out["other_medias"] = o
-			}
-			if fr := info.Failure(); fr != "" {
-				out["failure_reason"] = fr
-			}
-			if em := info.Error(); em != "" {
-				out["error_message"] = em
-			}
-			if dbg := info.Debug(); len(dbg) > 0 {
-				out["debug_trace"] = dbg
-			}
-			if err := enc.Encode(out); err != nil {
-				return fmt.Errorf("encode: %w", err)
-			}
+
 			return nil
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
+	}
+}
+
+// parseLogLevel converts string log level to LogLevel enum
+func parseLogLevel(level string) rtpeek.LogLevel {
+	switch strings.ToLower(level) {
+	case "trace":
+		return rtpeek.LogLevelTrace
+	case "debug":
+		return rtpeek.LogLevelDebug
+	case "info":
+		return rtpeek.LogLevelInfo
+	case "warn", "warning":
+		return rtpeek.LogLevelWarn
+	case "error":
+		return rtpeek.LogLevelError
+	default:
+		return rtpeek.LogLevelDisabled
 	}
 }

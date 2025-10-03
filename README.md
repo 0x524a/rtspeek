@@ -20,7 +20,7 @@ Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify trac
 | Diagnostics | Failure cause classification + raw error string + optional RTSP trace |
 | Auth Retry | Automatic single retry on 401 (Digest) when credentials embedded in URL |
 | Debugging | `--debug` flag yields ordered request/response header trace + stage markers |
-| Library API | Clean interface (`StreamInfo`) with helper methods (HasVideo, FirstVideoResolution, VideoResolutions, MediaTypes) |
+| Library API | Clean interface (`StreamInfo`) with helper methods (HasVideo, FirstVideoMedia, VideoResolutions, MediaTypes) |
 | CLI Output | Deterministic JSON (optionally pretty) for integration with scripts / services |
 
 ---
@@ -98,8 +98,8 @@ func main() {
         if err != nil {
                 fmt.Println("describe error:", err)
         }
-        fmt.Println("Describe OK:", info.DescribeSucceeded())
-        fmt.Println("Video Resolutions:", info.VideoResolutions())
+        fmt.Println("Describe OK:", info.IsDescribeSucceeded())
+        fmt.Println("Video Resolutions:", info.GetVideoResolutions())
 }
 ```
 
@@ -107,21 +107,24 @@ func main() {
 
 Core accessors (selected):
 ```go
-URLString() string
+GetURLString() string
 IsReachable() bool
-DescribeSucceeded() bool
+IsDescribeSucceeded() bool
 LatencyMs() float64
 Failure() string        // classification
 Error() string          // raw error string
-Video() []MediaInfo
-Audio() []MediaInfo
-VideoResolutions() []Resolution
+GetVideoMedias() []MediaInfo
+GetAudioMedias() []MediaInfo
+GetMedias() []MediaInfo
+GetVideoResolutions() []Resolution
+GetVideoResolutionStrings() []string
+GetVideoResolutionString() string
 HasVideo() bool
-FirstVideoResolution() *Resolution
+GetFirstVideoMedia() *MediaInfo
 Raw() *description.Session // underlying SDP model (not JSON encoded)
 ```
 
-Helper free functions mirror methods: `GetVideoResolutions(si)`, `HasVideo(si)` etc.
+Helper free functions mirror methods: `GetVideoResolutions(si)`, `GetVideoResolutionStrings(si)`, `GetVideoResolutionString(si)`, `GetMedias(si)`, `HasVideo(si)`, `GetFirstVideoMedia(si)`, `VideoResolutionString(si)` etc.
 
 ---
 

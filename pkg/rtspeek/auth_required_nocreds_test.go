@@ -17,7 +17,7 @@ func (h *authAlwaysHandler) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx
 	return &base.Response{StatusCode: base.StatusUnauthorized, Header: base.Header{"Www-Authenticate": base.HeaderValue{"Digest realm=\"x\", nonce=\"y\""}}}, nil, nil
 }
 
-// TestDescribeStreamAuthRequiredNoCreds ensures failure_reason=auth_required when no credentials supplied.
+// TestDescribeStreamAuthRequiredNoCreds ensures authentication error when no credentials supplied.
 func TestDescribeStreamAuthRequiredNoCreds(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -34,11 +34,19 @@ func TestDescribeStreamAuthRequiredNoCreds(t *testing.T) {
 	srv.Handler = &authAlwaysHandler{}
 
 	url := "rtsp://" + addr + "/needauth"
-	info, _ := DescribeStream(context.Background(), url, 1200*time.Millisecond)
-	if info.Failure() != "auth_required" {
-		t.Fatalf("expected auth_required failure, got %q (err=%s)", info.Failure(), info.Error())
+	info, err := DescribeStream(context.Background(), url, 1200*time.Millisecond)
+
+	// Should get error for authentication failure
+	if err == nil {
+		t.Fatalf("expected authentication error, got success")
 	}
-	if info.DescribeSucceeded() {
+
+	// But we should still have info about reachability
+	if info == nil {
+		t.Fatalf("expected info to be available even with auth failure")
+	}
+
+	if info.IsDescribeSucceeded() {
 		t.Fatalf("describe should not succeed without credentials")
 	}
 	if !info.IsReachable() {

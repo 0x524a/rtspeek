@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// TestDescribeStreamTimeout sets up a TCP listener that never speaks RTSP to force a timeout classification.
+// TestDescribeStreamTimeout sets up a TCP listener that never speaks RTSP to force a timeout.
 func TestDescribeStreamTimeout(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -18,18 +18,23 @@ func TestDescribeStreamTimeout(t *testing.T) {
 	url := "rtsp://" + ln.Addr().String() + "/idle"
 	ctx := context.Background()
 	start := time.Now()
-	info, errD := DescribeStream(ctx, url, 500*time.Millisecond)
+	info, err := DescribeStream(ctx, url, 500*time.Millisecond)
 	elapsed := time.Since(start)
-	if errD == nil {
-		// DescribeStream returns ErrDescribeFailed on timeout
-		// So if err is nil but describe_ok false, still acceptable, but we expect an error classification path.
-		if info.DescribeSucceeded() {
-			t.Fatalf("expected describe to fail due to timeout; got success")
-		}
+
+	// Should get a timeout error
+	if err == nil {
+		t.Fatalf("expected timeout error, got success")
 	}
-	if info.Failure() != "timeout" {
-		t.Fatalf("expected failure_reason timeout got %s (err=%v)", info.Failure(), errD)
+
+	// Should have info about the attempt
+	if info == nil {
+		t.Fatalf("expected info to be available even with timeout")
 	}
+
+	if info.IsDescribeSucceeded() {
+		t.Fatalf("expected describe to fail due to timeout; got success")
+	}
+
 	// Ensure the timeout wasn't ignored (some grace > requested timeout acceptable)
 	if elapsed < 400*time.Millisecond || elapsed > 1500*time.Millisecond {
 		t.Fatalf("unexpected elapsed duration %v", elapsed)
