@@ -29,21 +29,21 @@ Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify trac
 
 Library only:
 ```bash
-go get github.com/example/rtpeek
+go get github.com/0x524A/rtspeek
 ```
 
 CLI (from repo):
 ```bash
-git clone https://github.com/example/rtpeek.git
-cd rtpeek
-go build ./cmd/rtpeek
-./rtpeek --help
+git clone https://github.com/0x524A/rtspeek.git
+cd rtspeek
+go build ./cmd/rtspeek
+./rtspeek --help
 ```
 
 Add to PATH:
 ```bash
-go install ./cmd/rtpeek
-# binary now at $(go env GOPATH)/bin/rtpeek
+go install ./cmd/rtspeek
+# binary now at $(go env GOPATH)/bin/rtspeek
 ```
 
 ---
@@ -52,19 +52,19 @@ go install ./cmd/rtpeek
 
 ```bash
 # Basic probe
-rtpeek --url rtsp://camera.local/stream
+rtspeek --url rtsp://camera.local/stream
 
 # Increase timeout
-rtpeek --url rtsp://camera.local/stream --timeout 8s
+rtspeek --url rtsp://camera.local/stream --timeout 8s
 
 # Verbose diagnostic (stderr) + JSON
-rtpeek --url rtsp://bad.host/stream --timeout 3s --verbose
+rtspeek --url rtsp://bad.host/stream --timeout 3s --verbose
 
 # Include RTSP handshake trace
-rtpeek --url rtsp://camera.local/stream --debug --timeout 5s --verbose
+rtspeek --url rtsp://camera.local/stream --debug --timeout 5s --verbose
 
 # Disable pretty JSON
-rtpeek --url rtsp://camera.local/stream --pretty=false
+rtspeek --url rtsp://camera.local/stream --pretty=false
 ```
 
 Flags:
@@ -89,7 +89,7 @@ import (
         "context"
         "fmt"
         "time"
-    sd "github.com/example/rtpeek/pkg/rtpeek"
+    sd "github.com/0x524A/rtspeek/pkg/rtspeek"
 )
 
 func main() {
@@ -222,11 +222,11 @@ go test -coverprofile=coverage.out ./pkg/rtpeek
 go tool cover -func=coverage.out | head
 ```
 
-Current indicative coverage (may differ as project evolves): ~50%+ of `pkg/rtpeek` with table-driven RTSP server tests (success, not_found, auth retry) and SPS parsing.
+Current indicative coverage (may differ as project evolves): ~50%+ of `pkg/rtspeek` with table-driven RTSP server tests (success, not_found, auth retry) and SPS parsing.
 
 Integration test (tagged):
 ```bash
-go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtpeek
+go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
 ```
 
 ---
