@@ -1,4 +1,4 @@
-module github.com/example/rtspeek
+module github.com/0x524A/rtspeek
 
 go 1.23.0
 
