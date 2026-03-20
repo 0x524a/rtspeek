@@ -3,7 +3,7 @@ package rtspeek
 import (
 	"testing"
 
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
 )
 
 func TestDebugTracer(t *testing.T) {
