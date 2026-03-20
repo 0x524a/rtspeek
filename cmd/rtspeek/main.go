@@ -62,9 +62,9 @@ func main() {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
 
-				// For partial results (connection successful but RTSP failed), output the info
+				// For partial results (connection successful but RTSP failed), output the info with error
 				if info != nil {
-					return outputFormatter.WriteStreamInfo(info)
+					return outputFormatter.WriteStreamInfo(info, err)
 				}
 
 				// For complete failures, output error JSON
@@ -72,7 +72,7 @@ func main() {
 			}
 
 			// Write main JSON output to stdout
-			if err := outputFormatter.WriteStreamInfo(info); err != nil {
+			if err := outputFormatter.WriteStreamInfo(info, nil); err != nil {
 				return fmt.Errorf("output formatting failed: %w", err)
 			}
 
