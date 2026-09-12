@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
 )
 
 func TestNetworkDialer_CheckConnectivity(t *testing.T) {

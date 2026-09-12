@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
 )
 
 // NetworkDialer handles TCP connectivity checks for RTSP endpoints.

@@ -23,7 +23,8 @@ func NewOutputFormatter(writer io.Writer, pretty bool) *OutputFormatter {
 }
 
 // WriteStreamInfo formats and writes StreamInfo as JSON to the output.
-func (of *OutputFormatter) WriteStreamInfo(info rtpeek.StreamInfo) error {
+// If describeErr is non-nil, the error reason is included in the output.
+func (of *OutputFormatter) WriteStreamInfo(info rtpeek.StreamInfo, describeErr error) error {
 	if info == nil {
 		return fmt.Errorf("stream info is nil")
 	}
@@ -34,6 +35,9 @@ func (of *OutputFormatter) WriteStreamInfo(info rtpeek.StreamInfo) error {
 	}
 
 	output := of.buildOutput(info)
+	if describeErr != nil {
+		output["error"] = describeErr.Error()
+	}
 	return enc.Encode(output)
 }
 

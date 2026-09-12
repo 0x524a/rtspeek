@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bluenviron/gortsplib/v4"
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
-	"github.com/bluenviron/gortsplib/v4/pkg/description"
-	"github.com/bluenviron/gortsplib/v4/pkg/format"
+	"github.com/bluenviron/gortsplib/v5"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/description"
+	"github.com/bluenviron/gortsplib/v5/pkg/format"
 )
 
 // startTestServer spins a minimal RTSP server that serves a static SDP.
@@ -46,7 +46,10 @@ func startTestServer(t *testing.T) (*gortsplib.Server, string) {
 		t.Fatalf("server start: %v", err)
 	}
 
-	stream := gortsplib.NewServerStream(s, &description.Session{Medias: medias})
+	stream := &gortsplib.ServerStream{Server: s, Desc: &description.Session{Medias: medias}}
+	if err := stream.Initialize(); err != nil {
+		t.Fatalf("stream init: %v", err)
+	}
 	s.Handler = &testServerHandler{stream: stream}
 
 	return s, "rtsp://" + addr + "/test"

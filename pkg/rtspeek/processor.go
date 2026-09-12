@@ -3,7 +3,7 @@ package rtspeek
 import (
 	"fmt"
 
-	"github.com/bluenviron/gortsplib/v4/pkg/description"
+	"github.com/bluenviron/gortsplib/v5/pkg/description"
 )
 
 // MediaProcessor handles classification and processing of media streams.

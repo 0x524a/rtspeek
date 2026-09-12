@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bluenviron/gortsplib/v4"
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
-	"github.com/bluenviron/gortsplib/v4/pkg/description"
+	"github.com/bluenviron/gortsplib/v5"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/description"
 )
 
 // RTSPSession handles RTSP protocol operations (OPTIONS, DESCRIBE).
@@ -56,8 +56,11 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 		rs.logger.Stage("start")
 	}
 
+	rs.client.Scheme = parsedURL.Scheme
+	rs.client.Host = parsedURL.Host
+
 	start := time.Now()
-	if err := rs.client.Start(parsedURL.Scheme, parsedURL.Host); err != nil {
+	if err := rs.client.Start(); err != nil {
 		if rs.logger != nil {
 			rs.logger.NetworkOperation("rtsp_start", parsedURL.Host, time.Since(start), err)
 		}

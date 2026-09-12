@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bluenviron/gortsplib/v4"
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
-	"github.com/bluenviron/gortsplib/v4/pkg/description"
-	"github.com/bluenviron/gortsplib/v4/pkg/format"
+	"github.com/bluenviron/gortsplib/v5"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/description"
+	"github.com/bluenviron/gortsplib/v5/pkg/format"
 )
 
 // dynamicHandler allows customizing server responses for each test case.
@@ -58,7 +58,10 @@ func TestDescribeStreamTable(t *testing.T) {
 			setup: func(t *testing.T) (func(), string) {
 				var server *gortsplib.Server
 				server, url := startDynamicServer(t, func(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
-					stream := gortsplib.NewServerStream(server, session)
+					stream := &gortsplib.ServerStream{Server: server, Desc: session}
+					if err := stream.Initialize(); err != nil {
+						return nil, nil, err
+					}
 					return &base.Response{StatusCode: base.StatusOK}, stream, nil
 				})
 				return func() { server.Close() }, url
@@ -87,7 +90,10 @@ func TestDescribeStreamTable(t *testing.T) {
 						first = false
 						return &base.Response{StatusCode: base.StatusUnauthorized, Header: base.Header{"Www-Authenticate": base.HeaderValue{"Digest realm=\"test\", nonce=\"abc\""}}}, nil, nil
 					}
-					stream := gortsplib.NewServerStream(server, session)
+					stream := &gortsplib.ServerStream{Server: server, Desc: session}
+					if err := stream.Initialize(); err != nil {
+						return nil, nil, err
+					}
 					return &base.Response{StatusCode: base.StatusOK}, stream, nil
 				})
 				return func() { server.Close() }, url

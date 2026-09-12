@@ -2,6 +2,7 @@ package rtspeek
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -285,7 +286,7 @@ func (l *Logger) GetLegacyTrace() []string {
 			} else if direction == "incoming" {
 				if code, ok := entry.Fields["status_code"].(int); ok {
 					if msg, ok := entry.Fields["status_message"].(string); ok {
-						trace = append(trace, "← "+string(rune(code))+" "+msg)
+						trace = append(trace, fmt.Sprintf("← %d %s", code, msg))
 					}
 				}
 			}

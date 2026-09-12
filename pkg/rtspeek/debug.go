@@ -3,7 +3,7 @@ package rtspeek
 import (
 	"fmt"
 
-	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v5/pkg/base"
 )
 
 // DebugTracer captures RTSP request/response traces for debugging.
