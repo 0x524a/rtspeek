@@ -3,8 +3,11 @@
 # Go build, see .goreleaser.yaml's `dockers` section.
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+    && adduser -D -H -u 10001 rtspeek
 
 COPY rtspeek /usr/local/bin/rtspeek
+
+USER rtspeek
 
 ENTRYPOINT ["/usr/local/bin/rtspeek"]
