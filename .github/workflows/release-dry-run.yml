@@ -1,0 +1,45 @@
+name: Release Dry Run
+
+# The real Release workflow (release.yml) only triggers on version tags, so it
+# can't be a branch-protection status check (it would never run on a PR commit).
+# This workflow validates the same GoReleaser config on every push/PR to main -
+# builds all binaries and Docker images, but never publishes anything - so a
+# broken .goreleaser.yaml or Dockerfile is caught before merge, not at tag time.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  goreleaser-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: latest
+          args: check
+
+      - name: Dry-run release (binaries + Docker images, no publish)
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: latest
+          args: release --snapshot --clean --skip=publish
