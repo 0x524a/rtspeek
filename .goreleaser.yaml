@@ -1,0 +1,54 @@
+version: 2
+
+project_name: rtspeek
+
+builds:
+  - id: rtspeek
+    main: ./cmd/rtspeek
+    binary: rtspeek
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: rtspeek
+    ids:
+      - rtspeek
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Documentation
+      regexp: '^docs(\(.+\))?!?:'
+      order: 2
+    - title: CI / Tooling
+      regexp: '^(ci|chore|build)(\(.+\))?!?:'
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  draft: false

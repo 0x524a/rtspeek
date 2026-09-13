@@ -11,10 +11,29 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+// version is set at build time via -ldflags "-X main.version=..." (see .goreleaser.yaml)
+var version = "dev"
+
 func main() {
-	app := &cli.App{
-		Name:  "rtpeek",
-		Usage: "Inspect an RTSP URL and output stream description JSON",
+	os.Exit(run(os.Args))
+}
+
+// run executes the CLI app and returns a process exit code, kept separate from
+// main so it's testable without invoking os.Exit.
+func run(args []string) int {
+	if err := newApp().Run(args); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// newApp builds the CLI app definition.
+func newApp() *cli.App {
+	return &cli.App{
+		Name:    "rtpeek",
+		Version: version,
+		Usage:   "Inspect an RTSP URL and output stream description JSON",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "url", Usage: "RTSP URL to inspect", Required: true},
 			&cli.DurationFlag{Name: "timeout", Usage: "Timeout for describe", Value: 5 * time.Second},
@@ -78,10 +97,6 @@ func main() {
 
 			return nil
 		},
-	}
-	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
 	}
 }
 
