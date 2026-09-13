@@ -1,8 +1,6 @@
 package rtspeek
 
 import (
-	"errors"
-
 	h264conf "github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
 	h265conf "github.com/bluenviron/mediacommon/v2/pkg/codecs/h265"
 )
@@ -34,9 +32,4 @@ func bestResolution(parser func([]byte) (int, int, error), list [][]byte) *Resol
 		}
 	}
 	return nil
-}
-
-// extractResolutionFromCodecData attempts to parse standard codec-specific SPS arrays.
-func extractResolutionFromCodecData(codecSpecific map[string]any) (*Resolution, error) {
-	return nil, errors.New("not implemented generic extraction")
 }

@@ -12,7 +12,7 @@ func TestIsConnectableSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	url := "rtsp://" + ln.Addr().String() + "/any"
 	ok, err := IsConnectable(context.Background(), url, 600*time.Millisecond)
 	if err != nil || !ok {
@@ -41,7 +41,7 @@ func TestIsConnectableConnectionRefused(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close() // free the port
+	_ = l.Close() // free the port
 	ok, err := IsConnectable(context.Background(), "rtsp://"+addr+"/x", 500*time.Millisecond)
 	if err == nil || ok {
 		t.Fatalf("expected connection refused error, got ok=%v err=%v", ok, err)

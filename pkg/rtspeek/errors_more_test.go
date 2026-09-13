@@ -36,7 +36,7 @@ func TestDescribeStreamConnectionRefused(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close() // free immediately so next dial should refuse
+	_ = l.Close() // free immediately so next dial should refuse
 
 	ctx := context.Background()
 	url := "rtsp://" + addr + "/path"

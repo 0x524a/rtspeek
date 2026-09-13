@@ -277,13 +277,14 @@ func (l *Logger) GetLegacyTrace() []string {
 		if stage, ok := entry.Fields["stage"].(string); ok {
 			trace = append(trace, "STAGE: "+stage)
 		} else if direction, ok := entry.Fields["direction"].(string); ok {
-			if direction == "outgoing" {
+			switch direction {
+			case "outgoing":
 				if method, ok := entry.Fields["method"].(string); ok {
 					if url, ok := entry.Fields["url"].(string); ok {
 						trace = append(trace, "--> "+method+" "+url)
 					}
 				}
-			} else if direction == "incoming" {
+			case "incoming":
 				if code, ok := entry.Fields["status_code"].(int); ok {
 					if msg, ok := entry.Fields["status_message"].(string); ok {
 						trace = append(trace, fmt.Sprintf("← %d %s", code, msg))

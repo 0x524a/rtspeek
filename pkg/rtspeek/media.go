@@ -1,7 +1,6 @@
 package rtspeek
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -37,7 +36,7 @@ func classifyMedia(idx int, m *description.Media) (MediaInfo, error) {
 					}
 				}
 			default:
-				return mi, errors.New(fmt.Sprintf("unsupported video format: %s", mi.Format))
+				return mi, fmt.Errorf("unsupported video format: %s", mi.Format)
 			}
 		}
 	}

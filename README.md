@@ -307,7 +307,13 @@ GitHub Actions runs on every push/PR to `main`:
 | Workflow | What it does |
 |----------|---------------|
 | [`sonarcloud.yml`](.github/workflows/sonarcloud.yml) | Runs `go test -coverprofile=coverage.out ./...`, then submits code + coverage to [SonarCloud](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek) (project `0x524a_rtspeek`, org `0x524a`) for static analysis and quality gate status — see badges above |
+| [`lint.yml`](.github/workflows/lint.yml) | Runs [`golangci-lint`](https://golangci-lint.run/) (config in [`.golangci.yml`](.golangci.yml)) — the standard linter set (`errcheck`, `govet`, `staticcheck`, `unused`, etc.) plus `gofmt`/`goimports` formatting checks and `misspell` |
 | [`black-duck-security-scan-ci.yml`](.github/workflows/black-duck-security-scan-ci.yml) | SCA/SAST scanning via Black Duck (SCA, Coverity, Polaris, SRM). **Currently disabled** — it requires license credentials (`BLACKDUCKSCA_TOKEN`, `COVERITY_USER`/`COVERITY_PASSPHRASE`, `POLARIS_ACCESS_TOKEN`, `SRM_API_KEY` secrets, plus matching `*_URL` variables) that aren't configured on this repo. Re-enable with `gh workflow enable "CI Black Duck security scan"` once credentials are set |
+
+Run the same lint checks locally before pushing:
+```bash
+golangci-lint run ./...
+```
 
 SonarCloud project settings must have **Automatic Analysis disabled** (Administration → Analysis Method) since analysis is driven by CI here — SonarCloud rejects a CI-based scan while its own automatic scanner is also active for the same project.
 

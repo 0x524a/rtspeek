@@ -16,7 +16,7 @@ func TestDescribeStreamConnectionClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	addr := ln.Addr().String()
 
 	go func() {
@@ -45,15 +45,15 @@ func TestDescribeStreamConnectionClosed(t *testing.T) {
 		}
 		// Read OPTIONS and ignore content
 		if _, ok := readReq(); !ok {
-			conn.Close()
+			_ = conn.Close()
 			return
 		}
 		// Respond minimally to OPTIONS so client proceeds
-		conn.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: DESCRIBE\r\n\r\n"))
+		_, _ = conn.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: DESCRIBE\r\n\r\n"))
 		// Read DESCRIBE request then close without responding
 		readReq()
 		// Close to produce EOF for response read
-		conn.Close()
+		_ = conn.Close()
 	}()
 
 	url := "rtsp://" + addr + "/closed"

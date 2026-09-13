@@ -24,7 +24,7 @@ func TestDescribeStreamAuthRequiredNoCreds(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	srv := &gortsplib.Server{RTSPAddress: addr}
 	if err := srv.Start(); err != nil {

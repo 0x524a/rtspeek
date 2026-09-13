@@ -32,7 +32,7 @@ func startDynamicServer(t *testing.T, onDescribe func(*gortsplib.ServerHandlerOn
 		t.Fatalf("listen: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	srv = &gortsplib.Server{RTSPAddress: addr}
 	if err := srv.Start(); err != nil {

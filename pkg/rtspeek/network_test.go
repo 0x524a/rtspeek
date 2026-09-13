@@ -99,11 +99,4 @@ func TestNetworkDialer_PreflightDial(t *testing.T) {
 	if err == nil {
 		t.Error("Expected preflight dial to fail for nonexistent host")
 	}
-
-	if err != nil {
-		errStr := err.Error()
-		if errStr != "" {
-			// Good, we got an error message
-		}
-	}
 }

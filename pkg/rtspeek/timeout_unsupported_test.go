@@ -13,7 +13,7 @@ func TestDescribeStreamTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	url := "rtsp://" + ln.Addr().String() + "/idle"
 	ctx := context.Background()
