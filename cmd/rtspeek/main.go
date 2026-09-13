@@ -11,10 +11,14 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+// version is set at build time via -ldflags "-X main.version=..." (see .goreleaser.yaml)
+var version = "dev"
+
 func main() {
 	app := &cli.App{
-		Name:  "rtpeek",
-		Usage: "Inspect an RTSP URL and output stream description JSON",
+		Name:    "rtpeek",
+		Version: version,
+		Usage:   "Inspect an RTSP URL and output stream description JSON",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "url", Usage: "RTSP URL to inspect", Required: true},
 			&cli.DurationFlag{Name: "timeout", Usage: "Timeout for describe", Value: 5 * time.Second},

@@ -74,6 +74,9 @@ go install ./cmd/rtspeek
 # binary now at $(go env GOPATH)/bin/rtspeek
 ```
 
+Prebuilt binaries (Linux/macOS/Windows, amd64+arm64) are published for every tagged
+release on the [Releases page](https://github.com/0x524A/rtspeek/releases).
+
 ---
 
 <a id="quick-start-cli"></a>
@@ -313,6 +316,14 @@ GitHub Actions runs on every push/PR to `main`:
 Run the same lint checks locally before pushing:
 ```bash
 golangci-lint run ./...
+```
+
+**Releasing** (maintainers): push a semver tag to build & publish binaries via
+[GoReleaser](https://goreleaser.com/) — see [`.goreleaser.yaml`](.goreleaser.yaml) and
+[`release.yml`](.github/workflows/release.yml):
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 SonarCloud project settings must have **Automatic Analysis disabled** (Administration → Analysis Method) since analysis is driven by CI here — SonarCloud rejects a CI-based scan while its own automatic scanner is also active for the same project.
