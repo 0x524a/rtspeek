@@ -15,7 +15,16 @@ import (
 var version = "dev"
 
 func main() {
-	app := &cli.App{
+	app := newApp()
+	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
+// newApp builds the CLI app definition.
+func newApp() *cli.App {
+	return &cli.App{
 		Name:    "rtpeek",
 		Version: version,
 		Usage:   "Inspect an RTSP URL and output stream description JSON",
@@ -82,10 +91,6 @@ func main() {
 
 			return nil
 		},
-	}
-	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
 	}
 }
 
