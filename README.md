@@ -17,9 +17,9 @@ Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify trac
 | Validation | Basic scheme check (`rtsp://`, `rtsps://`) w/ early rejection |
 | Reachability | TCP preflight + timed DESCRIBE with overall timeout |
 | Media Summary | Track type, payload type, clock rate, codec name, basic H264/H265 SPS-derived resolution |
-| Diagnostics | Failure cause classification + raw error string + optional RTSP trace |
+| Diagnostics | Raw error string + optional RTSP trace |
 | Auth Retry | Automatic single retry on 401 (Digest) when credentials embedded in URL |
-| Debugging | `--debug` flag yields ordered request/response header trace + stage markers |
+| Debugging | `--debug` flag yields ordered request/response trace + stage markers |
 | Library API | Clean interface (`StreamInfo`) with helper methods (HasVideo, FirstVideoMedia, VideoResolutions, MediaTypes) |
 | CLI Output | Deterministic JSON (optionally pretty) for integration with scripts / services |
 
@@ -74,7 +74,9 @@ Flags:
 | `--timeout` | duration | `5s` | Overall deadline (dial + OPTIONS + DESCRIBE + retry) |
 | `--pretty` | bool | `true` | Indent JSON output |
 | `--verbose` | bool | `false` | Emit failure summary to stderr when applicable |
-| `--debug` | bool | `false` | Capture RTSP request/response headers + stage markers |
+| `--debug` | bool | `false` | Capture RTSP request/response trace + stage markers |
+| `--log-level` | string | `disabled` | Structured log level: `disabled`, `error`, `warn`, `info`, `debug`, `trace`. Only takes effect when `--log-console` is also set |
+| `--log-console` | bool | `false` | Enable pretty console logging to stderr (required for `--log-level` to have any effect) |
 
 Exit codes: `0` success (describe may still fail; see `describe_ok`), `1` internal/usage error.
 
@@ -109,16 +111,19 @@ Core accessors (selected):
 ```go
 GetURLString() string
 IsReachable() bool
+GetProtocolName() string
 IsDescribeSucceeded() bool
 LatencyMs() float64
-Failure() string        // classification
-Error() string          // raw error string
+GetDebugData() []string
 GetVideoMedias() []MediaInfo
 GetAudioMedias() []MediaInfo
+GetOtherMedias() []MediaInfo
 GetMedias() []MediaInfo
+GetMediaCount() int
 GetVideoResolutions() []Resolution
 GetVideoResolutionStrings() []string
 GetVideoResolutionString() string
+GetMediaTypes() []string
 HasVideo() bool
 GetFirstVideoMedia() *MediaInfo
 Raw() *description.Session // underlying SDP model (not JSON encoded)
@@ -160,16 +165,15 @@ Example (failure with debug):
     "describe_ok": false,
     "latency": 5001.3,
     "media_count": 0,
-    "failure_reason": "auth_required",
-    "error_message": "401 Unauthorized",
+    "error": "401 Unauthorized",
     "debug_trace": [
         "STAGE: start",
+        "STAGE: options",
         "--> OPTIONS rtsp://camera.local/stream",
-        "<-- 401 Unauthorized",
+        "← 200 OK",
         "STAGE: describe",
-        "STAGE: auth-retry",
         "--> DESCRIBE rtsp://camera.local/stream",
-        "<-- 200 OK"
+        "← 401 Unauthorized"
     ]
 }
 ```
@@ -179,12 +183,11 @@ Key fields:
 |-------|-------------|
 | `reachable` | TCP connect succeeded pre-describe |
 | `describe_ok` | DESCRIBE completed with 2xx and SDP parsed |
-| `failure_reason` | Short classification (see below) |
-| `error_message` | Raw underlying error string |
+| `error` | Raw underlying error string (present only on failure) |
 | `latency` | Milliseconds from start to final state (float) |
-| `debug_trace` | Present only with `--debug` |
+| `debug_trace` | Present only with `--debug`; stage markers + request/response lines (no header detail) |
 
-Failure reason values: `timeout`, `connection_refused`, `dns_error`, `auth_required`, `not_found`, `connection_closed`, `unsupported_scheme`, `other`.
+There is currently no `failure_reason` classification field in the output — inspect `error` directly, or match on the strings above.
 
 ---
 
@@ -197,12 +200,12 @@ Future improvements (roadmap): multi-round auth, Basic fallback, custom headers.
 ---
 
 ## 🛠 Debugging Toolkit
-Use `--debug` to capture:
+Use `--debug` to capture, in `debug_trace`:
 1. Stage markers: `STAGE: start`, `STAGE: options`, `STAGE: describe`, `STAGE: auth-retry`.
-2. Every RTSP request line, then headers (prefixed `--> H`).
-3. Every response line + headers (prefixed `<-- H`).
+2. Every RTSP request line (`--> METHOD url`).
+3. Every response status line (`← code message`).
 
-This lets you pinpoint stalls (e.g., missing DESCRIBE response).
+Header-level detail is not included in the trace. This lets you pinpoint stalls (e.g., missing DESCRIBE response).
 
 ---
 
@@ -221,7 +224,7 @@ go test ./...
 
 Generate coverage:
 ```bash
-go test -coverprofile=coverage.out ./pkg/rtpeek
+go test -coverprofile=coverage.out ./pkg/rtspeek
 go tool cover -func=coverage.out | head
 ```
 
@@ -235,13 +238,13 @@ go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
 ---
 
 ## 🩹 Troubleshooting
-| Symptom | Likely Cause | Suggested Action |
+| Symptom (`error` contains) | Likely Cause | Suggested Action |
 |---------|--------------|------------------|
-| `failure_reason=timeout` | Slow or no DESCRIBE response | Increase `--timeout`, enable `--debug` |
-| `failure_reason=auth_required` w/ creds | Wrong credentials or unsupported auth scheme | Verify user/pass; server may need Basic; multi-round not yet implemented |
-| `failure_reason=connection_refused` | Port closed / firewall | Confirm RTSP port; try :554 explicitly |
-| `failure_reason=dns_error` | Hostname resolution failure | Use IP or fix DNS / /etc/hosts |
-| `failure_reason=not_found` | Wrong path | Check camera channel/path syntax |
+| `timed out` / `i/o timeout` | Slow or no DESCRIBE response | Increase `--timeout`, enable `--debug` |
+| `401` / `Unauthorized` (w/ creds) | Wrong credentials or unsupported auth scheme | Verify user/pass; server may need Basic; multi-round not yet implemented |
+| `connection refused` | Port closed / firewall | Confirm RTSP port; try :554 explicitly |
+| `no such host` | Hostname resolution failure | Use IP or fix DNS / /etc/hosts |
+| `404` / `Not Found` | Wrong path | Check camera channel/path syntax |
 | `resolution` missing | No SPS / parse fail | Ensure stream actually sending SPS NALs |
 
 ---

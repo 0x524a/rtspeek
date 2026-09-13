@@ -68,10 +68,10 @@ func TestDescribeStreamIntegration(t *testing.T) {
 	if err != nil {
 		t.Skipf("integration skipped (DescribeStream error: %v)", err)
 	}
-	if !info.Reachable || !info.DescribeOK {
+	if !info.IsReachable() || !info.IsDescribeSucceeded() {
 		t.Fatalf("expected reachable & describe ok: %+v", info)
 	}
-	if info.MediaCount == 0 {
+	if info.GetMediaCount() == 0 {
 		t.Fatalf("expected at least one media")
 	}
 }
