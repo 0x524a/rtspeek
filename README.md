@@ -77,6 +77,16 @@ go install ./cmd/rtspeek
 Prebuilt binaries (Linux/macOS/Windows, amd64+arm64) are published for every tagged
 release on the [Releases page](https://github.com/0x524A/rtspeek/releases).
 
+Docker (multi-arch, linux/amd64 + linux/arm64):
+```bash
+docker pull ghcr.io/0x524a/rtspeek:latest
+docker run --rm ghcr.io/0x524a/rtspeek:latest --url rtsp://camera.local/stream --timeout 8s
+```
+Pin to a specific release instead of `latest` with `ghcr.io/0x524a/rtspeek:vX.Y.Z`.
+Note: the container has no network access to `camera.local`-style hostnames unless
+the target RTSP server is reachable from inside the container (e.g. use `--network host`
+on Linux, or the camera's LAN-routable IP).
+
 ---
 
 <a id="quick-start-cli"></a>
@@ -318,9 +328,10 @@ Run the same lint checks locally before pushing:
 golangci-lint run ./...
 ```
 
-**Releasing** (maintainers): push a semver tag to build & publish binaries via
-[GoReleaser](https://goreleaser.com/) — see [`.goreleaser.yaml`](.goreleaser.yaml) and
-[`release.yml`](.github/workflows/release.yml):
+**Releasing** (maintainers): push a semver tag to build & publish binaries and a
+multi-arch Docker image (to [GHCR](https://github.com/0x524A/rtspeek/pkgs/container/rtspeek))
+via [GoReleaser](https://goreleaser.com/) — see [`.goreleaser.yaml`](.goreleaser.yaml),
+[`Dockerfile`](Dockerfile), and [`release.yml`](.github/workflows/release.yml):
 ```bash
 git tag vX.Y.Z
 git push origin vX.Y.Z
