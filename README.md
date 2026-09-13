@@ -6,10 +6,38 @@ Small, fast RTSP inspection toolkit (library + CLI) built on top of [`gortsplib`
 
 Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify tracks, extract codec + (heuristic) resolution info, and emit structured JSON for automation.
 
+[![CI](https://github.com/0x524A/rtspeek/actions/workflows/sonarcloud.yml/badge.svg)](https://github.com/0x524A/rtspeek/actions/workflows/sonarcloud.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=0x524a_rtspeek&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=0x524a_rtspeek&metric=coverage)](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek)
+[![Go Report Card](https://goreportcard.com/badge/github.com/0x524A/rtspeek)](https://goreportcard.com/report/github.com/0x524A/rtspeek)
+[![Go Reference](https://pkg.go.dev/badge/github.com/0x524A/rtspeek.svg)](https://pkg.go.dev/github.com/0x524A/rtspeek)
+[![License](https://img.shields.io/github/license/0x524A/rtspeek)](LICENSE)
+
 </div>
 
 ---
 
+## Contents
+- [Key Features](#user-content-key-features)
+- [Installation](#user-content-installation)
+- [Quick Start (CLI)](#user-content-quick-start-cli)
+- [Programmatic Usage](#user-content-programmatic-usage)
+- [JSON Output Schema](#user-content-json-output-schema)
+- [Authentication](#user-content-authentication)
+- [Debugging Toolkit](#user-content-debugging-toolkit)
+- [Media & Resolution Extraction](#user-content-media-resolution-extraction)
+- [Testing & Coverage](#user-content-testing-coverage)
+- [CI & Code Quality](#user-content-ci-code-quality)
+- [Troubleshooting](#user-content-troubleshooting)
+- [FAQ](#user-content-faq)
+- [Roadmap Ideas](#user-content-roadmap-ideas)
+- [License](#user-content-license)
+- [Contributing](#user-content-contributing)
+- [Acknowledgments](#user-content-acknowledgments)
+
+---
+
+<a id="key-features"></a>
 ## ✨ Key Features
 
 | Area | Capabilities |
@@ -25,6 +53,7 @@ Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify trac
 
 ---
 
+<a id="installation"></a>
 ## 📦 Installation
 
 Library only:
@@ -48,6 +77,7 @@ go install ./cmd/rtspeek
 
 ---
 
+<a id="quick-start-cli"></a>
 ## 🚀 Quick Start (CLI)
 
 ```bash
@@ -82,8 +112,10 @@ Exit codes: `0` success (describe may still fail; see `describe_ok`), `1` intern
 
 ---
 
+<a id="programmatic-usage"></a>
 ## 🧪 Programmatic Usage
 
+Basic probe:
 ```go
 package main
 
@@ -104,6 +136,32 @@ func main() {
         fmt.Println("Video Resolutions:", info.GetVideoResolutions())
 }
 ```
+
+Handling partial results — `DescribeStream` can return a non-nil `info` *and* a non-nil `err` at the same time (e.g. TCP connected but DESCRIBE failed), so check `err` and still inspect `info` for whatever was reachable:
+```go
+info, err := sd.DescribeStream(ctx, url, 5*time.Second)
+if err != nil {
+        if info != nil {
+                fmt.Printf("reachable=%v describe_ok=%v error=%v\n", info.IsReachable(), info.IsDescribeSucceeded(), err)
+        } else {
+                fmt.Println("connection failed before any RTSP exchange:", err)
+        }
+        return
+}
+```
+
+Iterating tracks with `MediaInfo`/`Resolution`:
+```go
+for _, m := range info.GetMedias() {
+        line := fmt.Sprintf("[%d] %s codec=%s", m.Index, m.Type, m.Format)
+        if m.Resolution != nil {
+                line += " res=" + m.Resolution.String() // e.g. "1920x1080"
+        }
+        fmt.Println(line)
+}
+```
+
+See [`examples/video_media_example.go`](examples/video_media_example.go) for a complete runnable example (`go run ./examples`) covering `HasVideo`, `GetFirstVideoMedia`, and the free-function helper variants side by side.
 
 ### Interface Surface (`StreamInfo`)
 
@@ -133,6 +191,7 @@ Helper free functions mirror methods: `GetVideoResolutions(si)`, `GetVideoResolu
 
 ---
 
+<a id="json-output-schema"></a>
 ## 📄 JSON Output Schema
 
 Example (success):
@@ -191,6 +250,7 @@ There is currently no `failure_reason` classification field in the output — in
 
 ---
 
+<a id="authentication"></a>
 ## 🔐 Authentication
 Embed credentials in the URL: `rtsp://user:pass@host:554/stream`.
 If first DESCRIBE returns 401 with a digest challenge, a single retry is attempted.
@@ -199,6 +259,7 @@ Future improvements (roadmap): multi-round auth, Basic fallback, custom headers.
 
 ---
 
+<a id="debugging-toolkit"></a>
 ## 🛠 Debugging Toolkit
 Use `--debug` to capture, in `debug_trace`:
 1. Stage markers: `STAGE: start`, `STAGE: options`, `STAGE: describe`, `STAGE: auth-retry`.
@@ -209,12 +270,14 @@ Header-level detail is not included in the trace. This lets you pinpoint stalls 
 
 ---
 
+<a id="media-resolution-extraction"></a>
 ## 🧬 Media & Resolution Extraction
 H264 / H265 SPS parsing is used (via mediacommon) to derive width/height when available.
 If SPS is absent or parse fails, `resolution` is omitted.
 
 ---
 
+<a id="testing-coverage"></a>
 ## 🧪 Testing & Coverage
 
 Run unit tests:
@@ -237,6 +300,21 @@ go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
 
 ---
 
+<a id="ci-code-quality"></a>
+## 🔍 CI & Code Quality
+
+GitHub Actions runs on every push/PR to `main`:
+
+| Workflow | What it does |
+|----------|---------------|
+| [`sonarcloud.yml`](.github/workflows/sonarcloud.yml) | Runs `go test -coverprofile=coverage.out ./...`, then submits code + coverage to [SonarCloud](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek) (project `0x524a_rtspeek`, org `0x524a`) for static analysis and quality gate status — see badges above |
+| [`black-duck-security-scan-ci.yml`](.github/workflows/black-duck-security-scan-ci.yml) | SCA/SAST scanning via Black Duck (SCA, Coverity, Polaris, SRM). **Currently disabled** — it requires license credentials (`BLACKDUCKSCA_TOKEN`, `COVERITY_USER`/`COVERITY_PASSPHRASE`, `POLARIS_ACCESS_TOKEN`, `SRM_API_KEY` secrets, plus matching `*_URL` variables) that aren't configured on this repo. Re-enable with `gh workflow enable "CI Black Duck security scan"` once credentials are set |
+
+SonarCloud project settings must have **Automatic Analysis disabled** (Administration → Analysis Method) since analysis is driven by CI here — SonarCloud rejects a CI-based scan while its own automatic scanner is also active for the same project.
+
+---
+
+<a id="troubleshooting"></a>
 ## 🩹 Troubleshooting
 | Symptom (`error` contains) | Likely Cause | Suggested Action |
 |---------|--------------|------------------|
@@ -249,6 +327,7 @@ go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
 
 ---
 
+<a id="faq"></a>
 ## ❓ FAQ
 **Q: Does it perform SETUP/PLAY?**  
 Not currently; it stops after DESCRIBE.
@@ -261,6 +340,7 @@ Not exposed yet; will be part of a future extension (see roadmap).
 
 ---
 
+<a id="roadmap-ideas"></a>
 ## 🗺 Roadmap Ideas
 | Feature | Status |
 |---------|--------|
@@ -273,11 +353,13 @@ Not exposed yet; will be part of a future extension (see roadmap).
 
 ---
 
+<a id="license"></a>
 ## 🔑 License
-MIT (add LICENSE file if distributing)
+[MIT](LICENSE)
 
 ---
 
+<a id="contributing"></a>
 ## 🤝 Contributing
 1. Fork & branch
 2. Add tests for new behavior
@@ -286,6 +368,7 @@ MIT (add LICENSE file if distributing)
 
 ---
 
+<a id="acknowledgments"></a>
 ## ❤️ Acknowledgments
 Built atop the excellent [`gortsplib`](https://github.com/bluenviron/gortsplib) ecosystem.
 
