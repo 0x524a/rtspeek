@@ -15,11 +15,17 @@ import (
 var version = "dev"
 
 func main() {
-	app := newApp()
-	if err := app.Run(os.Args); err != nil {
+	os.Exit(run(os.Args))
+}
+
+// run executes the CLI app and returns a process exit code, kept separate from
+// main so it's testable without invoking os.Exit.
+func run(args []string) int {
+	if err := newApp().Run(args); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // newApp builds the CLI app definition.

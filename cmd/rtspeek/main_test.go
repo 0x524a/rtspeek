@@ -37,3 +37,15 @@ func TestNewAppVersion(t *testing.T) {
 		t.Fatalf("app.Name = %q, want %q", app.Name, "rtpeek")
 	}
 }
+
+func TestRun_MissingRequiredURL(t *testing.T) {
+	if code := run([]string{"rtspeek"}); code != 1 {
+		t.Fatalf("run with no --url: got exit code %d, want 1", code)
+	}
+}
+
+func TestRun_Help(t *testing.T) {
+	if code := run([]string{"rtspeek", "--help"}); code != 0 {
+		t.Fatalf("run with --help: got exit code %d, want 0", code)
+	}
+}
