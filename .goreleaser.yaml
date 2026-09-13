@@ -29,6 +29,46 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
+dockers:
+  - id: rtspeek-amd64
+    ids: [rtspeek]
+    goos: linux
+    goarch: amd64
+    use: buildx
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+  - id: rtspeek-arm64
+    ids: [rtspeek]
+    goos: linux
+    goarch: arm64
+    use: buildx
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+docker_manifests:
+  - name_template: "ghcr.io/0x524a/rtspeek:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-amd64"
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/0x524a/rtspeek:latest"
+    image_templates:
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-amd64"
+      - "ghcr.io/0x524a/rtspeek:{{ .Version }}-arm64"
+
 checksum:
   name_template: "checksums.txt"
 
