@@ -324,6 +324,9 @@ GitHub Actions runs on every push/PR to `main`:
 | [`release-dry-run.yml`](.github/workflows/release-dry-run.yml) | Validates [`.goreleaser.yaml`](.goreleaser.yaml) and builds all release binaries + Docker images with `goreleaser release --snapshot --skip=publish` — nothing is published. Catches a broken release/Docker config before merge instead of at tag time |
 | [`black-duck-security-scan-ci.yml`](.github/workflows/black-duck-security-scan-ci.yml) | SCA/SAST scanning via Black Duck (SCA, Coverity, Polaris, SRM). **Currently disabled** — it requires license credentials (`BLACKDUCKSCA_TOKEN`, `COVERITY_USER`/`COVERITY_PASSPHRASE`, `POLARIS_ACCESS_TOKEN`, `SRM_API_KEY` secrets, plus matching `*_URL` variables) that aren't configured on this repo. Re-enable with `gh workflow enable "CI Black Duck security scan"` once credentials are set |
 
+**Dependency updates:** [Dependabot](.github/dependabot.yml) opens weekly PRs for Go
+modules (minor/patch grouped), GitHub Actions (grouped), and the `Dockerfile` base image.
+
 Run the same lint checks locally before pushing:
 ```bash
 golangci-lint run ./...
