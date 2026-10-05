@@ -326,8 +326,6 @@ GitHub Actions runs on every push/PR to `main`:
 
 **Dependency updates:** [Dependabot](.github/dependabot.yml) opens weekly PRs for Go
 modules (minor/patch grouped), GitHub Actions (grouped), and the `Dockerfile` base image.
-Dependabot PRs can't read normal repo secrets, so `SONAR_TOKEN` must also be added under
-Settings → Secrets and variables → **Dependabot**, or the SonarCloud check fails on them.
 
 Run the same lint checks locally before pushing:
 ```bash
