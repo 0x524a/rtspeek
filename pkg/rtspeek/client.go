@@ -34,10 +34,13 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 
 	debugEnabled := isDebug(ctx)
 
-	// Create logger if debug is enabled
-	var logger *Logger
-	if debugEnabled {
-		logger = NewLogger(LogLevelDebug, io.Discard, false) // Discard for now, collected in buffer
+	// Prefer a caller-supplied logger; otherwise create one if debug is enabled
+	logger, ok := ctx.Value(loggerKey).(*Logger)
+	if !ok || logger == nil {
+		logger = nil
+		if debugEnabled {
+			logger = NewLogger(LogLevelDebug, io.Discard, false) // Discard for now, collected in buffer
+		}
 	}
 
 	// Perform preflight TCP connectivity check

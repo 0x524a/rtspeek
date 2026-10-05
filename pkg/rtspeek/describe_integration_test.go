@@ -3,6 +3,7 @@
 package rtspeek
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
@@ -73,5 +74,21 @@ func TestDescribeStreamIntegration(t *testing.T) {
 	}
 	if info.GetMediaCount() == 0 {
 		t.Fatalf("expected at least one media")
+	}
+}
+
+// TestDescribeStreamHonorsContextLogger verifies a logger injected via WithLogger receives output.
+func TestDescribeStreamHonorsContextLogger(t *testing.T) {
+	s, url := startTestServer(t)
+	defer s.Close()
+
+	var out bytes.Buffer
+	ctx := WithLogger(context.Background(), NewLogger(LogLevelDebug, &out, false))
+
+	if _, err := DescribeStream(ctx, url, 3*time.Second); err != nil {
+		t.Fatalf("DescribeStream: %v", err)
+	}
+	if out.Len() == 0 {
+		t.Fatal("injected logger received no output")
 	}
 }
