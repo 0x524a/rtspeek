@@ -212,6 +212,13 @@ func (l *Logger) MediaProcessing(mediaType string, index int, codec string, reso
 		Str("codec", codec).
 		Str("resolution", resolution).
 		Msg("Media processed")
+
+	l.addToBuffer(LogLevelInfo, "Media processed", map[string]interface{}{
+		"media_type": mediaType,
+		"index":      index,
+		"codec":      codec,
+		"resolution": resolution,
+	})
 }
 
 // Error logs errors with context
