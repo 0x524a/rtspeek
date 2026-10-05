@@ -26,7 +26,8 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 
 	// Enforce supported schemes early
 	if parsedURL.Scheme != "rtsp" && parsedURL.Scheme != "rtsps" {
-		return nil, fmt.Errorf("unsupported scheme '%s': only rtsp and rtsps are supported", parsedURL.Scheme)
+		return nil, newStreamError(ReasonUnsupportedScheme,
+			fmt.Errorf("unsupported scheme '%s': only rtsp and rtsps are supported", parsedURL.Scheme))
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -48,7 +49,7 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 	if preflightErr := dialer.PreflightDial(ctx, parsedURL); preflightErr != nil {
 		info.Latency = float64(time.Since(start)) / float64(time.Millisecond)
 		info.Reachable = false
-		return info, fmt.Errorf("connection failed: %w", preflightErr)
+		return info, newStreamError(classifyError(preflightErr), fmt.Errorf("connection failed: %w", preflightErr))
 	}
 	info.Reachable = true
 
@@ -80,7 +81,7 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 			// We may not have trace data if timeout occurred early
 			info.DebugTrace = []string{"TIMEOUT: operation cancelled before completion"}
 		}
-		return info, fmt.Errorf("operation timed out after %v", timeout)
+		return info, newStreamError(ReasonTimeout, fmt.Errorf("operation timed out after %v", timeout))
 	case result = <-resultCh:
 		// Continue with result processing
 	}

@@ -64,7 +64,7 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 		if rs.logger != nil {
 			rs.logger.NetworkOperation("rtsp_start", parsedURL.Host, time.Since(start), err)
 		}
-		return nil, rs.getTrace(), fmt.Errorf("RTSP start failed: %w", err)
+		return nil, rs.getTrace(), newStreamError(classifyError(err), fmt.Errorf("RTSP start failed: %w", err))
 	}
 
 	if rs.logger != nil {
@@ -86,7 +86,7 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 			rs.logger.NetworkOperation("rtsp_options", parsedURL.Host, time.Since(optionsStart), err)
 		}
 		if !isAuthChallenge(err) {
-			return nil, rs.getTrace(), fmt.Errorf("RTSP options failed: %w", err)
+			return nil, rs.getTrace(), newStreamError(classifyError(err), fmt.Errorf("RTSP options failed: %w", err))
 		}
 	} else if rs.logger != nil {
 		rs.logger.NetworkOperation("rtsp_options", parsedURL.Host, time.Since(optionsStart), nil)
@@ -123,7 +123,11 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 	}
 
 	if describeErr != nil {
-		return nil, rs.getTrace(), fmt.Errorf("RTSP describe failed: %w", describeErr)
+		reason := classifyError(describeErr)
+		if isAuthChallenge(describeErr) {
+			reason = ReasonAuthRequired
+		}
+		return nil, rs.getTrace(), newStreamError(reason, fmt.Errorf("RTSP describe failed: %w", describeErr))
 	}
 
 	return desc, rs.getTrace(), nil
