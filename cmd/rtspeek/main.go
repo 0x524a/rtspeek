@@ -40,6 +40,9 @@ func newApp() *cli.App {
 			&cli.BoolFlag{Name: "pretty", Usage: "Pretty-print JSON output", Value: true},
 			&cli.BoolFlag{Name: "verbose", Usage: "Include failure reason on stderr"},
 			&cli.BoolFlag{Name: "debug", Usage: "Enable debug logging (legacy compatibility)"},
+			&cli.BoolFlag{Name: "analyze", Usage: "Receive the stream and report packet loss, jitter and bitrate (pulls live video and uses a camera session)"},
+			&cli.DurationFlag{Name: "analyze-duration", Usage: "How long to receive media with --analyze (max 60s)", Value: rtpeek.DefaultAnalyzeDuration},
+			&cli.StringFlag{Name: "analyze-transport", Usage: "Transport for --analyze: auto, udp or tcp", Value: "auto"},
 			&cli.StringFlag{Name: "log-level", Usage: "Log level: disabled, error, warn, info, debug, trace", Value: "disabled"},
 			&cli.BoolFlag{Name: "log-console", Usage: "Enable pretty console logging to stderr", Value: false},
 		},
@@ -74,7 +77,14 @@ func newApp() *cli.App {
 			}
 
 			// Perform RTSP describe operation
-			info, err := rtpeek.DescribeStream(ctx, url, timeout)
+			opts := rtpeek.Options{Timeout: timeout}
+			if c.Bool("analyze") {
+				opts.Analyze = &rtpeek.AnalyzeOptions{
+					Duration:  c.Duration("analyze-duration"),
+					Transport: rtpeek.AnalyzeTransport(c.String("analyze-transport")),
+				}
+			}
+			info, err := rtpeek.DescribeStreamWithOptions(ctx, url, opts)
 			if err != nil {
 				// Print verbose error information to stderr if requested
 				if verbose {

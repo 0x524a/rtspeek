@@ -3,6 +3,7 @@ package rtspeek
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/bluenviron/gortsplib/v5"
@@ -15,6 +16,9 @@ type RTSPSession struct {
 	client  *gortsplib.Client
 	logger  *Logger
 	timeout time.Duration
+
+	// switchedTransport is set when gortsplib falls back from UDP to TCP.
+	switchedTransport atomic.Bool
 }
 
 // NewRTSPSession creates a new RTSP session with the specified timeout and logger.
@@ -54,17 +58,15 @@ func NewRTSPSession(timeout time.Duration, logger *Logger) *RTSPSession {
 			logger.Debug("RTP decode error", map[string]interface{}{"error": err.Error()})
 		}
 	}
+	rs := &RTSPSession{client: client, logger: logger, timeout: timeout}
 	client.OnTransportSwitch = func(err error) {
+		rs.switchedTransport.Store(true)
 		if logger != nil {
 			logger.Debug("transport switch", map[string]interface{}{"reason": err.Error()})
 		}
 	}
 
-	return &RTSPSession{
-		client:  client,
-		logger:  logger,
-		timeout: timeout,
-	}
+	return rs
 }
 
 // PerformDescribe executes the RTSP handshake (START, OPTIONS, DESCRIBE) with auth retry.

@@ -79,6 +79,10 @@ func (of *OutputFormatter) buildOutput(info rtpeek.StreamInfo) map[string]any {
 		output["other_medias"] = other
 	}
 
+	if analysis := info.GetAnalysis(); analysis != nil {
+		output["analysis"] = analysis
+	}
+
 	// Add debug trace if present
 	if debug := info.GetDebugData(); len(debug) > 0 {
 		output["debug_trace"] = debug
