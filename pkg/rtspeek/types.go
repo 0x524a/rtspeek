@@ -144,16 +144,33 @@ func (r Resolution) String() string {
 	return fmt.Sprintf("%dx%d", r.Width, r.Height)
 }
 
-// Convenience helpers for users that prefer free functions instead of methods.
-func GetVideoResolutions(si StreamInfo) []Resolution   { return si.GetVideoResolutions() }
-func GetVideoResolutionStrings(si StreamInfo) []string { return si.GetVideoResolutionStrings() }
-func GetVideoResolutionString(si StreamInfo) string    { return si.GetVideoResolutionString() }
-func GetMediaTypes(si StreamInfo) []string             { return si.GetMediaTypes() }
-func GetMedias(si StreamInfo) []MediaInfo              { return si.GetMedias() }
-func HasVideo(si StreamInfo) bool                      { return si.HasVideo() }
-func GetFirstVideoMedia(si StreamInfo) *MediaInfo      { return si.GetFirstVideoMedia() }
+// GetVideoResolutions returns the resolution of every video media in si.
+func GetVideoResolutions(si StreamInfo) []Resolution { return si.GetVideoResolutions() }
 
-// Helper to get first video resolution (for backward compatibility)
+// GetVideoResolutionStrings returns the "WIDTHxHEIGHT" form of every video
+// resolution in si.
+func GetVideoResolutionStrings(si StreamInfo) []string { return si.GetVideoResolutionStrings() }
+
+// GetVideoResolutionString returns the "WIDTHxHEIGHT" resolution of the first
+// video media in si, or "" if there is none.
+func GetVideoResolutionString(si StreamInfo) string { return si.GetVideoResolutionString() }
+
+// GetMediaTypes returns the type ("video", "audio" or "other") of each media
+// in si, video first.
+func GetMediaTypes(si StreamInfo) []string { return si.GetMediaTypes() }
+
+// GetMedias returns every media in si: video, then audio, then other.
+func GetMedias(si StreamInfo) []MediaInfo { return si.GetMedias() }
+
+// HasVideo reports whether si contains at least one video media.
+func HasVideo(si StreamInfo) bool { return si.HasVideo() }
+
+// GetFirstVideoMedia returns the first video media in si, or nil if there is
+// none.
+func GetFirstVideoMedia(si StreamInfo) *MediaInfo { return si.GetFirstVideoMedia() }
+
+// FirstVideoResolution returns the resolution of the first video media in si,
+// or nil if there is none. It is kept for backward compatibility.
 func FirstVideoResolution(si StreamInfo) *Resolution {
 	if media := si.GetFirstVideoMedia(); media != nil {
 		return media.Resolution
