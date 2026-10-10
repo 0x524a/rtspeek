@@ -51,6 +51,40 @@ type streamInfo struct {
 	RawDescription *description.Session `json:"-"`
 }
 
+// StreamInfoParams holds the values NewStreamInfo needs. Derived values such as
+// the media count are computed, so a fixture cannot contradict itself.
+type StreamInfoParams struct {
+	URL         string
+	Reachable   bool
+	Protocol    string
+	DescribeOK  bool
+	LatencyMs   float64
+	VideoMedias []MediaInfo
+	AudioMedias []MediaInfo
+	OtherMedias []MediaInfo
+	DebugTrace  []string
+	Raw         *description.Session
+}
+
+// NewStreamInfo builds a StreamInfo from p. It is meant for tests and tools that
+// need a StreamInfo without running DescribeStream. The media count is the total
+// number of media entries, matching what DescribeStream reports.
+func NewStreamInfo(p StreamInfoParams) StreamInfo {
+	return &streamInfo{
+		URL:            p.URL,
+		Reachable:      p.Reachable,
+		Protocol:       p.Protocol,
+		DescribeOK:     p.DescribeOK,
+		Latency:        p.LatencyMs,
+		MediaCount:     len(p.VideoMedias) + len(p.AudioMedias) + len(p.OtherMedias),
+		VideoMedias:    p.VideoMedias,
+		AudioMedias:    p.AudioMedias,
+		OtherMedias:    p.OtherMedias,
+		DebugTrace:     p.DebugTrace,
+		RawDescription: p.Raw,
+	}
+}
+
 // Accessor implementations
 func (s *streamInfo) GetURLString() string        { return s.URL }
 func (s *streamInfo) IsReachable() bool           { return s.Reachable }
