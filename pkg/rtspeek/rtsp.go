@@ -43,6 +43,23 @@ func NewRTSPSession(timeout time.Duration, logger *Logger) *RTSPSession {
 		}
 	}
 
+	// gortsplib prints to stderr when these are nil, so always install them.
+	client.OnPacketsLost = func(lost uint64) {
+		if logger != nil {
+			logger.Debug("RTP packets lost", map[string]interface{}{"lost": lost})
+		}
+	}
+	client.OnDecodeError = func(err error) {
+		if logger != nil {
+			logger.Debug("RTP decode error", map[string]interface{}{"error": err.Error()})
+		}
+	}
+	client.OnTransportSwitch = func(err error) {
+		if logger != nil {
+			logger.Debug("transport switch", map[string]interface{}{"reason": err.Error()})
+		}
+	}
+
 	return &RTSPSession{
 		client:  client,
 		logger:  logger,
@@ -70,11 +87,6 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 	if rs.logger != nil {
 		rs.logger.NetworkOperation("rtsp_start", parsedURL.Host, time.Since(start), nil)
 	}
-
-	// Ensure client is closed when we're done
-	defer func() {
-		go rs.client.Close() // Non-blocking close
-	}()
 
 	if rs.logger != nil {
 		rs.logger.Stage("options")
@@ -141,7 +153,8 @@ func (rs *RTSPSession) getTrace() []string {
 	return nil
 }
 
-// Close closes the RTSP client connection.
+// Close closes the RTSP client connection. PerformDescribe leaves the client
+// open so the caller can keep using it, so the caller must call Close.
 func (rs *RTSPSession) Close() {
 	if rs.client != nil {
 		rs.client.Close()

@@ -34,12 +34,11 @@ func startDynamicServer(t *testing.T, onDescribe func(*gortsplib.ServerHandlerOn
 	addr := l.Addr().String()
 	_ = l.Close()
 
-	srv = &gortsplib.Server{RTSPAddress: addr}
+	srv = &gortsplib.Server{RTSPAddress: addr, Handler: &dynamicHandler{onDescribe: onDescribe}}
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 
-	srv.Handler = &dynamicHandler{onDescribe: onDescribe}
 	return srv, "rtsp://" + addr + "/test"
 }
 

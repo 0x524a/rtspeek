@@ -42,7 +42,8 @@ func startTestServer(t *testing.T) (*gortsplib.Server, string) {
 	addr := l.Addr().String()
 	l.Close()
 
-	s := &gortsplib.Server{RTSPAddress: addr}
+	handler := &testServerHandler{}
+	s := &gortsplib.Server{RTSPAddress: addr, Handler: handler}
 	if err := s.Start(); err != nil {
 		t.Fatalf("server start: %v", err)
 	}
@@ -51,7 +52,7 @@ func startTestServer(t *testing.T) (*gortsplib.Server, string) {
 	if err := stream.Initialize(); err != nil {
 		t.Fatalf("stream init: %v", err)
 	}
-	s.Handler = &testServerHandler{stream: stream}
+	handler.stream = stream
 
 	return s, "rtsp://" + addr + "/test"
 }

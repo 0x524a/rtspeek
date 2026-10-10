@@ -26,12 +26,11 @@ func TestDescribeStreamAuthRequiredNoCreds(t *testing.T) {
 	addr := l.Addr().String()
 	_ = l.Close()
 
-	srv := &gortsplib.Server{RTSPAddress: addr}
+	srv := &gortsplib.Server{RTSPAddress: addr, Handler: &authAlwaysHandler{}}
 	if err := srv.Start(); err != nil {
 		t.Fatalf("server start: %v", err)
 	}
 	defer srv.Close()
-	srv.Handler = &authAlwaysHandler{}
 
 	url := "rtsp://" + addr + "/needauth"
 	info, err := DescribeStream(context.Background(), url, 1200*time.Millisecond)
