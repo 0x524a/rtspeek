@@ -107,3 +107,30 @@ func TestRunWithLoggingFlags(t *testing.T) {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }
+
+func TestRunAnalyzeRejectsUnknownTransport(t *testing.T) {
+	out := captureStdout(t, func() {
+		run([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--analyze", "--analyze-transport", "carrier-pigeon", "--pretty=false"})
+	})
+	if !strings.Contains(out, "unknown analyze transport") {
+		t.Fatalf("expected a transport error in the output, got %q", out)
+	}
+}
+
+func TestRunAnalyzeRejectsTooLongDuration(t *testing.T) {
+	out := captureStdout(t, func() {
+		run([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--analyze", "--analyze-duration", "5m", "--pretty=false"})
+	})
+	if !strings.Contains(out, "exceeds the maximum") {
+		t.Fatalf("expected a duration error in the output, got %q", out)
+	}
+}
+
+func TestRunAnalyzeUnreachableStillReportsError(t *testing.T) {
+	out := captureStdout(t, func() {
+		run([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--timeout", "1s", "--analyze", "--pretty=false"})
+	})
+	if !strings.Contains(out, `"describe_ok":false`) || strings.Contains(out, `"analysis"`) {
+		t.Fatalf("unreachable host should report the error and no analysis, got %q", out)
+	}
+}

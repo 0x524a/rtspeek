@@ -8,7 +8,7 @@
 
 rtspeek checks whether an RTSP stream is up and what is in it. It opens the connection, runs OPTIONS and DESCRIBE, and reports each track's type, codec and, for H.264 and H.265, resolution. Output is JSON, so scripts and services can read it. It is built on [`gortsplib`](https://github.com/bluenviron/gortsplib) and ships as a Go library and a CLI.
 
-It stops after DESCRIBE. It does not SETUP or PLAY, so it never pulls video.
+By default it stops after DESCRIBE and never pulls video. With `--analyze` it also receives the stream for a few seconds and reports packet loss, jitter and bitrate; see [Analyze a stream](#analyze-a-stream).
 
 ## Install
 
@@ -44,6 +44,9 @@ rtspeek --url rtsp://camera.local/stream --pretty=false
 | `--pretty` | `true` | Indent the JSON. |
 | `--verbose` | `false` | Print a failure summary to stderr. |
 | `--debug` | `false` | Add `debug_trace` to the JSON: stage markers plus each request and response line. |
+| `--analyze` | `false` | Receive the stream after DESCRIBE and add an `analysis` object to the JSON. **Pulls live video and uses a camera session.** |
+| `--analyze-duration` | `5s` | How long to receive media once the first packet arrives. Maximum `60s`. |
+| `--analyze-transport` | `auto` | `auto` (UDP, falling back to TCP), `udp` or `tcp`. |
 | `--log-level` | `disabled` | `disabled`, `error`, `warn`, `info`, `debug` or `trace`. Only applies with `--log-console`. |
 | `--log-console` | `false` | Write pretty structured logs to stderr. |
 
@@ -114,6 +117,79 @@ The JSON has no failure-category field. Go callers can get one from the error; s
 
 Put credentials in the URL: `rtsp://user:pass@host:554/stream`. If the first DESCRIBE returns 401 with a digest challenge, rtspeek retries once. Multi-round auth and Basic fallback are not implemented.
 
+## Analyze a stream
+
+`--analyze` goes past DESCRIBE: it runs SETUP and PLAY, receives media for `--analyze-duration`, then tears the session down. Use it when a stream answers but looks unhealthy.
+
+> **Warning:** analysis pulls live video and holds a camera session for the whole window. Some cameras allow only a few concurrent sessions, so analyzing one can push off a recorder that is already connected. It is off unless you ask for it, and the default output is unchanged.
+
+```bash
+rtspeek --url rtsp://camera.local/stream --analyze
+rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --analyze-transport udp
+```
+
+```json
+"analysis": {
+  "duration_ms": 5003.1,
+  "requested_duration_ms": 5000,
+  "transport": "udp",
+  "tracks": [
+    {
+      "index": 0,
+      "type": "video",
+      "format": "H264",
+      "packets": 4120,
+      "lost": 37,
+      "loss_percent": 0.89,
+      "jitter_ms": 4.1,
+      "bytes": 1445000,
+      "bitrate_kbps": 2310.5,
+      "rtcp_packets": 2,
+      "decode_errors": 0
+    }
+  ],
+  "findings": [
+    { "severity": "warn", "code": "packet_loss", "track": 0, "value": 0.89, "message": "0.89% RTP packet loss on track 0" }
+  ]
+}
+```
+
+`findings` is always an array, sorted by severity. Findings never change the exit code; read them in the output. A failed analysis does not fail the describe: `describe_ok` stays as DESCRIBE left it, and `analysis.error` says what went wrong.
+
+| Code | Severity | When |
+|------|----------|------|
+| `packet_loss` | warn at 0.5%, error at 2% | RTP packets missing from the sequence |
+| `high_jitter` | warn at 30 ms, error at 100 ms | RFC 3550 interarrival jitter |
+| `no_packets` | error | No RTP arrived on any track, or on one track while others delivered |
+| `stream_interrupted` | error | The connection ended during the window |
+| `setup_failed` | error | The server rejected SETUP |
+| `play_failed` | error | The server rejected PLAY |
+| `transport_fallback` | info | No UDP packets arrived, so the client switched to TCP |
+
+These codes are stable. Thresholds are set in the library through `AnalyzeOptions.Thresholds`; CLI flags for them are planned.
+
+**Transport matters.** UDP shows real loss on the path from the camera to this machine. TCP retransmits, so it hides network loss and mostly shows problems at the source. `auto` tries UDP first and falls back to TCP after about 3 seconds of silence, and reports that as `transport_fallback`.
+
+**Time limit.** One analysis takes at most `--timeout` + the first-packet wait (5s, plus 3s in `auto`) + `--analyze-duration` + 2s. A stream that never delivers packets ends after the first-packet wait with `no_packets`.
+
+**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network.
+
+Out-of-order and duplicate packet counts are not reported: the underlying RTSP library reorders and drops duplicates before rtspeek sees them.
+
+From Go:
+
+```go
+info, err := rtspeek.DescribeStreamWithOptions(ctx, url, rtspeek.Options{
+    Timeout: 5 * time.Second,
+    Analyze: &rtspeek.AnalyzeOptions{Duration: 10 * time.Second, Transport: rtspeek.TransportUDP},
+})
+if a := info.GetAnalysis(); a != nil {
+    for _, f := range a.Findings {
+        fmt.Println(f.Severity, f.Code, f.Message)
+    }
+}
+```
+
 ## Use the library
 
 ```go
@@ -170,6 +246,7 @@ GetVideoResolutionStrings() []string
 GetVideoResolutionString() string
 HasVideo() bool
 GetFirstVideoMedia() *MediaInfo
+GetAnalysis() *Analysis      // nil unless analysis was requested
 Raw() *description.Session // underlying SDP model, not JSON encoded
 ```
 
@@ -254,7 +331,7 @@ git push origin vX.Y.Z
 
 ## FAQ
 
-**Does it SETUP or PLAY?** No. It stops after DESCRIBE.
+**Does it SETUP or PLAY?** Only with `--analyze`. Without it, rtspeek stops after DESCRIBE.
 
 **Why is latency a float?** It is milliseconds, so you can read it directly. Round it however you like downstream.
 
@@ -268,7 +345,10 @@ git push origin vX.Y.Z
 | Multi-round auth and Basic fallback | Planned |
 | Custom headers and User-Agent | Planned |
 | Export the raw SDP as JSON (opt-in) | Planned |
-| Optional SETUP and PLAY probe with RTCP stats | Exploratory |
+| Frame-level analysis: frame rate, keyframe interval, timestamp jumps, bitstream errors | Planned |
+| Parameter-set, resolution and RTCP sender-report checks in analysis | Planned |
+| Threshold flags for `--analyze` | Planned |
+| SRTP (`rtsps://`) support in analysis | Planned |
 
 ## Contributing
 

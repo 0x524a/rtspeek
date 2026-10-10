@@ -12,6 +12,24 @@ import (
 
 // DescribeStream performs connection and DESCRIBE, returning StreamInfo and underlying description pointer.
 func DescribeStream(ctx context.Context, url string, timeout time.Duration) (StreamInfo, error) {
+	return DescribeStreamWithOptions(ctx, url, Options{Timeout: timeout})
+}
+
+// DescribeStreamWithOptions is DescribeStream with extra options. When
+// opts.Analyze is set it also receives the stream after DESCRIBE and attaches
+// the result to the returned StreamInfo (see StreamInfo.GetAnalysis). Analysis
+// pulls live media, which occupies a camera session. A failed analysis is
+// reported in the Analysis, not as an error.
+func DescribeStreamWithOptions(ctx context.Context, url string, opts Options) (StreamInfo, error) {
+	timeout := opts.Timeout
+	var analyzeOpts AnalyzeOptions
+	if opts.Analyze != nil {
+		var optErr error
+		if analyzeOpts, optErr = opts.Analyze.normalize(); optErr != nil {
+			return nil, optErr
+		}
+	}
+	parent := ctx
 	info := &streamInfo{URL: url, Protocol: "rtsp"}
 	start := time.Now()
 
@@ -54,16 +72,20 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 	info.Reachable = true
 
 	// Perform RTSP operations with timeout handling
+	session := NewRTSPSession(timeout, logger)
+	// The goroutine below owns the client and closes it. Closing from here
+	// could race with a describe that is still starting up after a timeout.
+	// With analysis the client stays open until this function returns.
+	sessionDone := make(chan struct{})
+	defer close(sessionDone)
 	resultCh := make(chan *rtspResult, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				resultCh <- &rtspResult{err: fmt.Errorf("RTSP operation panicked: %v", r)}
+				session.Close()
 			}
 		}()
-
-		session := NewRTSPSession(timeout, logger)
-		defer session.Close()
 
 		desc, trace, sessionErr := session.PerformDescribe(ctx, parsedURL)
 		resultCh <- &rtspResult{
@@ -71,6 +93,10 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 			trace:       trace,
 			err:         sessionErr,
 		}
+		if opts.Analyze != nil && sessionErr == nil {
+			<-sessionDone
+		}
+		session.Close()
 	}()
 
 	var result *rtspResult
@@ -112,6 +138,12 @@ func DescribeStream(ctx context.Context, url string, timeout time.Duration) (Str
 		if err := processor.ProcessMedias(result.description, info); err != nil {
 			return nil, fmt.Errorf("media processing failed: %w", err)
 		}
+	}
+
+	if opts.Analyze != nil {
+		actx, acancel := context.WithTimeout(parent, analysisBudget(timeout, analyzeOpts))
+		defer acancel()
+		info.Analysis = session.Analyze(actx, result.description, analyzeOpts)
 	}
 
 	return info, nil

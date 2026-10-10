@@ -15,6 +15,7 @@ type stubInfo struct {
 	rtpeek.StreamInfo
 	video, audio, other []rtpeek.MediaInfo
 	debug               []string
+	analysis            *rtpeek.Analysis
 }
 
 func (s stubInfo) GetURLString() string               { return "rtsp://host/stream" }
@@ -27,6 +28,7 @@ func (s stubInfo) GetVideoMedias() []rtpeek.MediaInfo { return s.video }
 func (s stubInfo) GetAudioMedias() []rtpeek.MediaInfo { return s.audio }
 func (s stubInfo) GetOtherMedias() []rtpeek.MediaInfo { return s.other }
 func (s stubInfo) GetDebugData() []string             { return s.debug }
+func (s stubInfo) GetAnalysis() *rtpeek.Analysis      { return s.analysis }
 
 func decode(t *testing.T, b []byte) map[string]any {
 	t.Helper()
@@ -105,5 +107,30 @@ func TestWriteErrorOutput(t *testing.T) {
 	m := decode(t, buf.Bytes())
 	if m["url"] != "rtsp://x" || m["describe_ok"] != false || m["error"] != "bad" {
 		t.Errorf("unexpected output: %v", m)
+	}
+}
+
+func TestWriteStreamInfoAnalysisOnlyWhenPresent(t *testing.T) {
+	var buf bytes.Buffer
+	of := NewOutputFormatter(&buf, false)
+
+	if err := of.WriteStreamInfo(stubInfo{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decode(t, buf.Bytes())["analysis"]; ok {
+		t.Fatal("analysis must be absent when not requested")
+	}
+
+	buf.Reset()
+	a := &rtpeek.Analysis{Tracks: []rtpeek.TrackAnalysis{{Index: 0, Packets: 10}}, Findings: []rtpeek.Finding{}}
+	if err := of.WriteStreamInfo(stubInfo{analysis: a}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := decode(t, buf.Bytes())["analysis"].(map[string]any)
+	if !ok {
+		t.Fatalf("analysis missing: %s", buf.String())
+	}
+	if f, ok := got["findings"].([]any); !ok || len(f) != 0 {
+		t.Fatalf("findings should be an empty array, got %v", got["findings"])
 	}
 }

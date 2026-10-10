@@ -34,6 +34,10 @@ type StreamInfo interface {
 
 	// Underlying raw description (may be nil)
 	Raw() *description.Session
+
+	// GetAnalysis returns the stream analysis, or nil unless analysis was
+	// requested through DescribeStreamWithOptions.
+	GetAnalysis() *Analysis
 }
 
 // streamInfo is the concrete implementation (unexported)
@@ -49,6 +53,7 @@ type streamInfo struct {
 	OtherMedias    []MediaInfo          `json:"other_medias,omitempty"`
 	DebugTrace     []string             `json:"debug_trace,omitempty"`
 	RawDescription *description.Session `json:"-"`
+	Analysis       *Analysis            `json:"analysis,omitempty"`
 }
 
 // StreamInfoParams holds the values NewStreamInfo needs. Derived values such as
@@ -64,6 +69,7 @@ type StreamInfoParams struct {
 	OtherMedias []MediaInfo
 	DebugTrace  []string
 	Raw         *description.Session
+	Analysis    *Analysis
 }
 
 // NewStreamInfo builds a StreamInfo from p. It is meant for tests and tools that
@@ -82,6 +88,7 @@ func NewStreamInfo(p StreamInfoParams) StreamInfo {
 		OtherMedias:    p.OtherMedias,
 		DebugTrace:     p.DebugTrace,
 		RawDescription: p.Raw,
+		Analysis:       p.Analysis,
 	}
 }
 
@@ -97,6 +104,7 @@ func (s *streamInfo) GetAudioMedias() []MediaInfo { return s.AudioMedias }
 func (s *streamInfo) GetOtherMedias() []MediaInfo { return s.OtherMedias }
 func (s *streamInfo) GetMediaCount() int          { return s.MediaCount }
 func (s *streamInfo) Raw() *description.Session   { return s.RawDescription }
+func (s *streamInfo) GetAnalysis() *Analysis      { return s.Analysis }
 
 func (s *streamInfo) GetMedias() []MediaInfo {
 	allMedias := make([]MediaInfo, 0, s.MediaCount)
@@ -202,6 +210,9 @@ func HasVideo(si StreamInfo) bool { return si.HasVideo() }
 // GetFirstVideoMedia returns the first video media in si, or nil if there is
 // none.
 func GetFirstVideoMedia(si StreamInfo) *MediaInfo { return si.GetFirstVideoMedia() }
+
+// GetAnalysis returns si.GetAnalysis().
+func GetAnalysis(si StreamInfo) *Analysis { return si.GetAnalysis() }
 
 // FirstVideoResolution returns the resolution of the first video media in si,
 // or nil if there is none. It is kept for backward compatibility.
