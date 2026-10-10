@@ -137,11 +137,13 @@ func IsConnectable(ctx context.Context, rawURL string, timeout time.Duration) (b
 	return dialer.CheckConnectivity(ctx, rawURL)
 }
 
-// debug context key and helpers
+// debugCtxKey is the context key under which WithDebug stores its flag.
 type debugCtxKey struct{}
 
 var debugKey = debugCtxKey{}
 
+// WithDebug returns a copy of ctx that makes stream inspection record a debug
+// trace, available through StreamInfo.GetDebugData.
 func WithDebug(ctx context.Context) context.Context { return context.WithValue(ctx, debugKey, true) }
 func isDebug(ctx context.Context) bool {
 	v := ctx.Value(debugKey)
