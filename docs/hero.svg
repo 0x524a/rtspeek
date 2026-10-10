@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 270" width="1200" height="270" role="img" aria-labelledby="t d">
+  <title id="t">rtspeek</title>
+  <desc id="d">An RTSP handshake trace: OPTIONS 200, DESCRIBE 200, one H264 video track at 1920x1080, above a row of colour bars.</desc>
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+    .name { font-size: 76px; font-weight: 700; fill: #ece9e2; letter-spacing: -2px; }
+    .sub  { font-size: 19px; fill: #9aa3ad; }
+    .dim  { font-size: 15px; fill: #6b7580; }
+    .out  { font-size: 16px; fill: #ece9e2; }
+    .ok   { font-size: 16px; fill: #6fcf8e; }
+    .res  { font-size: 16px; fill: #e8c547; }
+  </style>
+  <defs><clipPath id="c"><rect width="1200" height="270" rx="10"/></clipPath></defs>
+  <rect width="1200" height="270" rx="10" fill="#12161c"/>
+
+  <!-- colour bars: the one place colour is spent -->
+  <g clip-path="url(#c)">
+    <rect x="0"    width="171.5" height="22" fill="#c8c6c0"/>
+    <rect x="171.5" width="171.5" height="22" fill="#c9b83a"/>
+    <rect x="343"  width="171.5" height="22" fill="#3aa6b0"/>
+    <rect x="514.5" width="171.5" height="22" fill="#4aa25a"/>
+    <rect x="686"  width="171.5" height="22" fill="#a54a9c"/>
+    <rect x="857.5" width="171.5" height="22" fill="#b5483f"/>
+    <rect x="1029" width="171"   height="22" fill="#3f55a8"/>
+  </g>
+
+  <!-- wordmark -->
+  <text class="name" x="56" y="140">rtspeek</text>
+  <text class="sub"  x="58" y="182">Probe an RTSP stream. Get JSON.</text>
+  <text class="dim"  x="58" y="212">Go library and CLI, built on gortsplib.</text>
+
+  <!-- the trace -->
+  <g transform="translate(640 86)">
+    <text class="dim" x="0" y="0">$ rtspeek --url rtsp://cam.local/stream --debug</text>
+    <text class="out" x="0" y="40">--&gt; OPTIONS</text>
+    <text class="ok"  x="190" y="40">200 OK</text>
+    <text class="out" x="0" y="68">--&gt; DESCRIBE</text>
+    <text class="ok"  x="190" y="68">200 OK</text>
+    <text class="dim" x="0" y="108">track 0</text>
+    <text class="out" x="190" y="108">video  H264</text>
+    <text class="res" x="360" y="108">1920x1080</text>
+    <text class="dim" x="0" y="136">latency</text>
+    <text class="out" x="190" y="136">74.2 ms</text>
+  </g>
+
+</svg>
