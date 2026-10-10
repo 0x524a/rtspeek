@@ -30,7 +30,11 @@ type StreamError struct {
 	Err    error
 }
 
+// Error returns the message of the underlying error.
 func (e *StreamError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the underlying error, so errors.Is and errors.As see through
+// a StreamError.
 func (e *StreamError) Unwrap() error { return e.Err }
 
 // newStreamError tags err with reason. A nil err stays nil.
