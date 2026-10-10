@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
 	"github.com/bluenviron/gortsplib/v5/pkg/format"
 	"github.com/pion/rtp"
@@ -126,5 +127,47 @@ func newTestMedia() *description.Media {
 	return &description.Media{
 		Type:    description.MediaTypeVideo,
 		Formats: []format.Format{&format.H264{PayloadTyp: 96, PacketizationMode: 1}},
+	}
+}
+
+func TestTransportName(t *testing.T) {
+	cases := map[gortsplib.Protocol]string{
+		gortsplib.ProtocolUDP:          "udp",
+		gortsplib.ProtocolTCP:          "tcp",
+		gortsplib.ProtocolUDPMulticast: "udp-multicast",
+		gortsplib.Protocol(99):         "unknown",
+	}
+	for p, want := range cases {
+		if got := transportName(p); got != want {
+			t.Errorf("transportName(%v) = %q, want %q", p, got, want)
+		}
+	}
+}
+
+func TestSortFindingsTieBreakers(t *testing.T) {
+	two, one := 2, 1
+	fs := []Finding{
+		{Severity: SeverityWarn, Code: "b", Track: &two},
+		{Severity: SeverityWarn, Code: "z", Track: &one},
+		{Severity: SeverityWarn, Code: "a", Track: &one},
+		{Severity: SeverityWarn, Code: "m"}, // stream-wide sorts before per-track
+		{Severity: SeverityError, Code: "x", Track: &two},
+	}
+	sortFindings(fs)
+	got := ""
+	for _, f := range fs {
+		got += f.Code
+	}
+	if got != "xmazb" {
+		t.Fatalf("order = %q, want xmazb", got)
+	}
+}
+
+func TestNormalizeRejectsBadOptions(t *testing.T) {
+	if _, err := (AnalyzeOptions{Duration: MaxAnalyzeDuration + time.Second}).normalize(); err == nil {
+		t.Error("expected error for duration above the maximum")
+	}
+	if _, err := (AnalyzeOptions{Transport: "x"}).normalize(); err == nil {
+		t.Error("expected error for unknown transport")
 	}
 }
