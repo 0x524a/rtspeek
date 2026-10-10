@@ -9,6 +9,7 @@ Inspect a stream URL, perform RTSP handshake (OPTIONS + DESCRIBE), classify trac
 [![CI](https://github.com/0x524A/rtspeek/actions/workflows/sonarcloud.yml/badge.svg)](https://github.com/0x524A/rtspeek/actions/workflows/sonarcloud.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=0x524a_rtspeek&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=0x524a_rtspeek&metric=coverage)](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek)
+[![codecov](https://codecov.io/gh/0x524a/rtspeek/branch/main/graph/badge.svg)](https://codecov.io/gh/0x524a/rtspeek)
 [![Go Reference](https://pkg.go.dev/badge/github.com/0x524A/rtspeek.svg)](https://pkg.go.dev/github.com/0x524A/rtspeek)
 [![License](https://img.shields.io/github/license/0x524A/rtspeek)](LICENSE)
 
