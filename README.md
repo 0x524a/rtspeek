@@ -154,7 +154,8 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
         "timestamp_jumps": 0,
         "broken_frames": 0,
         "has_param_sets": true,
-        "advertised_fps": 25
+        "advertised_fps": 25,
+        "reordered_frames": 0
       }
     }
   ],
@@ -181,9 +182,12 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
 | `broken_frame` | warn at 0.5% of frames, error at 5% | A frame could not be reassembled, for example a lost fragment |
 | `missing_param_sets` | warn | A keyframe arrived with no SPS/PPS in the SDP or in-band |
 | `low_fps` | warn below 50% | Measured fps is below half the rate the SPS advertises |
+| `frame_reordering` | info | Frames arrive out of presentation order: the encoder uses B-frames. `value` is the reorder depth |
 | `frame_analysis_skipped` | info | Unsupported video codec, or frame analysis could not run on the track |
 
 Frame analysis runs on H.264 and H.265 tracks. It measures fps and keyframe interval from RTP time, so network jitter does not skew them. `frames` is absent on audio tracks, and a video track in another codec, or one where frame analysis could not run, gets `frames_skipped` plus an `info` finding. A short window can miss a long GOP, so `no_keyframe` is only a warning for windows of 10 s or more.
+
+B-frames show up as RTP timestamps that step backwards in arrival order. `reordered_frames` counts those frames and `max_reorder_depth` is how many earlier frames the worst one overtook (capped at 16). A short window can miss reordering if the GOP rarely uses it. `declared_reorder_depth` is what the SPS allows, when it says (0 means no B-frames). RTP carries no DTS, so decode timestamps are not reported.
 
 These codes are stable. Thresholds are set in the library through `AnalyzeOptions.Thresholds`; CLI flags for them are planned.
 

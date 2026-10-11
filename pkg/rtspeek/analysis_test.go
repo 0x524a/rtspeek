@@ -208,6 +208,8 @@ func TestEvaluateFrameFindings(t *testing.T) {
 		{"no keyframe means no param finding", FrameStats{Frames: 50}, 5000, false, FindingMissingParamSets, ""},
 		{"low fps", FrameStats{Frames: 50, FPS: 14.9, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, SeverityWarn},
 		{"fps at ratio", FrameStats{Frames: 50, FPS: 15, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
+		{"reordering", FrameStats{Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true, ReorderedFrames: 10, MaxReorderDepth: 2}, 5000, false, FindingFrameReordering, SeverityInfo},
+		{"no reordering", FrameStats{Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true}, 5000, false, FindingFrameReordering, ""},
 		{"no advertised fps", FrameStats{Frames: 50, FPS: 1, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
 	}
 	for _, tc := range cases {

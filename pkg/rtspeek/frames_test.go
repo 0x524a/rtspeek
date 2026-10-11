@@ -174,8 +174,43 @@ func TestFramesBackwardsStepsFromBFramesAreTolerated(t *testing.T) {
 	for _, n := range []int{0, 3, 1, 2, 6, 4, 5, 9, 7, 8} {
 		s.frameAt(pAU(50), uint32(90000+n*step25))
 	}
-	if fs := s.stats(); fs.TimestampJumps != 0 {
+	fs := s.stats()
+	if fs.TimestampJumps != 0 {
 		t.Fatalf("B-frame reordering counted as %d jumps", fs.TimestampJumps)
+	}
+	if fs.ReorderedFrames != 6 || fs.MaxReorderDepth != 1 {
+		t.Fatalf("reordered = %d depth = %d, want 6 and 1", fs.ReorderedFrames, fs.MaxReorderDepth)
+	}
+}
+
+func TestFramesDeepReorderingReportsDepth(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	// Hierarchical B: frame 4 is decoded before 1, 2 and 3.
+	for _, n := range []int{0, 4, 2, 1, 3, 8, 6, 5, 7} {
+		s.frameAt(pAU(50), uint32(90000+n*step25))
+	}
+	if fs := s.stats(); fs.MaxReorderDepth != 2 || fs.ReorderedFrames != 6 {
+		t.Fatalf("reordered = %d depth = %d, want 6 and 2", fs.ReorderedFrames, fs.MaxReorderDepth)
+	}
+}
+
+func TestFramesInOrderStreamIsNotReordered(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.run(20, 5)
+	if fs := s.stats(); fs.ReorderedFrames != 0 || fs.MaxReorderDepth != 0 {
+		t.Fatalf("in-order stream reported reordering: %+v", fs)
+	}
+}
+
+func TestFramesDeclaredReorderDepth(t *testing.T) {
+	// The test SPS carries a bitstream restriction with max_num_reorder_frames = 2.
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1, SPS: sps720p30}, 1450)
+	s.run(3, 0)
+	if fs := s.stats(); fs.DeclaredReorderDepth == nil || *fs.DeclaredReorderDepth != 2 {
+		t.Fatalf("declared = %v, want 2", fs.DeclaredReorderDepth)
+	}
+	if got := spsReorder(false, []byte{0x67}); got != -1 {
+		t.Fatalf("garbage SPS gave %d, want -1", got)
 	}
 }
 

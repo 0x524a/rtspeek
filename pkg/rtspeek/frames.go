@@ -75,6 +75,12 @@ type trackFrames struct {
 	nDelta      int64
 	firstKeyPos int64
 	lastKeyPos  int64
+
+	recent       [reorderWindow]int64 // RTP positions of the latest frames
+	recentN      int
+	reordered    uint64
+	reorderDepth int
+	declared     int // reorder depth the SPS declares, -1 when unknown
 }
 
 func newFrameCollector(desc *description.Session, th Thresholds) *frameCollector {
@@ -88,7 +94,7 @@ func newFrameCollector(desc *description.Session, th Thresholds) *frameCollector
 			continue
 		}
 		f := m.Formats[0]
-		t := &trackFrames{format: f, clock: float64(f.ClockRate()), jumpFactor: th.TimestampJumpFactor}
+		t := &trackFrames{format: f, clock: float64(f.ClockRate()), jumpFactor: th.TimestampJumpFactor, declared: -1}
 		switch ct := f.(type) {
 		case *format.H264:
 			dec, err := ct.CreateDecoder()
@@ -126,6 +132,7 @@ func (t *trackFrames) seedParams(sps, pps, vps []byte) {
 	if len(sps) > 0 {
 		t.haveParams |= psSPS
 		t.advertised = spsFPS(t.h265, sps)
+		t.declared = spsReorder(t.h265, sps)
 	}
 	if len(pps) > 0 {
 		t.haveParams |= psPPS
@@ -155,6 +162,29 @@ func spsFPS(h265 bool, sps []byte) float64 {
 		return 0
 	}
 	return fps
+}
+
+// spsReorder returns the reorder depth the SPS declares (0 means no B-frames),
+// or -1 when it does not say.
+func spsReorder(h265 bool, sps []byte) int {
+	if h265 {
+		var s h265conf.SPS
+		if s.Unmarshal(sps) != nil || len(s.MaxNumReorderPics) == 0 {
+			return -1
+		}
+		return int(s.MaxNumReorderPics[len(s.MaxNumReorderPics)-1])
+	}
+	var s h264conf.SPS
+	if s.Unmarshal(sps) != nil {
+		return -1
+	}
+	switch {
+	case s.PicOrderCntType == 2:
+		return 0
+	case s.VUI != nil && s.VUI.BitstreamRestriction != nil:
+		return int(s.VUI.BitstreamRestriction.MaxNumReorderFrames)
+	}
+	return -1
 }
 
 // packet feeds one RTP packet. It never panics: this runs on a gortsplib
@@ -216,6 +246,8 @@ func (t *trackFrames) pendingFragment(p *rtp.Packet) bool {
 const (
 	rateChangeRun = 3
 	seedDeltas    = 3
+	// reorderWindow is how many recent frames are compared to spot reordering.
+	reorderWindow = 16
 )
 
 func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
@@ -229,6 +261,9 @@ func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
 			// An in-band SPS beats the SDP one, which is often stale.
 			if fps := spsFPS(t.h265, n); fps > 0 {
 				t.advertised = fps
+			}
+			if d := spsReorder(t.h265, n); d >= 0 {
+				t.declared = d
 			}
 		}
 	}
@@ -253,6 +288,7 @@ func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
 	t.keyAtTS = false
 	if !t.haveTS {
 		t.haveTS = true
+		t.noteOrder(0)
 	} else {
 		t.delta(int64(int32(ts - t.lastTS)))
 	}
@@ -286,6 +322,7 @@ func (t *trackFrames) delta(d int64) {
 	if mean <= 0 || float64(abs) <= t.jumpFactor*mean {
 		t.flushRun()
 		t.pos += d
+		t.noteOrder(t.pos)
 		t.nDelta++
 		t.baseSum += abs
 		t.baseN++
@@ -302,6 +339,7 @@ func (t *trackFrames) delta(d int64) {
 	if t.runN >= rateChangeRun && t.runFirst > 0 {
 		base := t.pos
 		t.pos += t.runPos
+		t.noteOrder(t.pos)
 		t.nDelta += t.runN
 		t.baseSum, t.baseN = t.runPos, t.runN
 		for _, rel := range t.runKeys {
@@ -320,17 +358,39 @@ func (t *trackFrames) commitSeed() {
 	}
 	sort.Slice(abs, func(i, j int) bool { return abs[i] < abs[j] })
 	med := float64(abs[len(abs)/2])
+	var p int64
 	for _, d := range t.seed {
 		if float64(absInt(d)) > t.jumpFactor*med {
 			t.jumps++
 			t.pos -= d
 			continue
 		}
+		p += d
+		t.noteOrder(p)
 		t.nDelta++
 		t.baseSum += absInt(d)
 		t.baseN++
 	}
 	t.seed, t.seeded = nil, true
+}
+
+// noteOrder records a frame at RTP position pos. RTP packets arrive in decode
+// order and carry the presentation time, so a frame positioned before earlier
+// frames was reordered: the encoder uses B-frames. The depth is how many earlier
+// frames it overtakes.
+func (t *trackFrames) noteOrder(pos int64) {
+	overtaken := 0
+	for _, r := range t.recent[:min(t.recentN, reorderWindow)] {
+		if r > pos {
+			overtaken++
+		}
+	}
+	if overtaken > 0 {
+		t.reordered++
+		t.reorderDepth = max(t.reorderDepth, overtaken)
+	}
+	t.recent[t.recentN%reorderWindow] = pos
+	t.recentN++
 }
 
 // flushRun turns the pending run into timestamp jumps.
@@ -421,6 +481,12 @@ func (fc *frameCollector) snapshot(m *description.Media) (*FrameStats, string) {
 		BrokenFrames:   t.broken,
 		HasParamSets:   t.haveParams&t.needParams == t.needParams,
 		AdvertisedFPS:  round2(t.advertised),
+
+		ReorderedFrames: t.reordered,
+		MaxReorderDepth: t.reorderDepth,
+	}
+	if t.declared >= 0 {
+		fs.DeclaredReorderDepth = new(t.declared)
 	}
 	n := t.nDelta + int64(len(t.seed))
 	if n >= 1 && t.pos > 0 {
