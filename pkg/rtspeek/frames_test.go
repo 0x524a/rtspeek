@@ -1,6 +1,7 @@
 package rtspeek
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -292,5 +293,33 @@ func TestFramesH265(t *testing.T) {
 	fs, _ := fc.snapshot(m)
 	if fs == nil || fs.Frames != 20 || fs.Keyframes != 2 || !fs.HasParamSets || fs.FPS != 25 || fs.BrokenFrames != 0 {
 		t.Fatalf("unexpected H.265 stats: %+v", fs)
+	}
+}
+
+type panicDecoder struct{ calls int }
+
+func (d *panicDecoder) Decode(*rtp.Packet) ([][]byte, error) {
+	d.calls++
+	panic("boom")
+}
+
+func TestFramesDecoderPanicIsRecovered(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	dec := &panicDecoder{}
+	s.fc.tracks[s.m].dec = dec
+	pkt := &rtp.Packet{Header: rtp.Header{Version: 2, Marker: true}, Payload: []byte{0x41, 0}}
+
+	s.fc.packet(s.m, s.f, pkt)
+	fs, reason := s.fc.snapshot(s.m)
+	if fs != nil || !strings.HasPrefix(reason, "frame analysis failed") {
+		t.Fatalf("want nil stats and a failure reason, got %+v %q", fs, reason)
+	}
+
+	s.fc.packet(s.m, s.f, pkt) // would deadlock if the mutex were still held
+	if dec.calls != 1 {
+		t.Fatalf("decoder called %d times, want 1 (track must stay failed)", dec.calls)
+	}
+	if fs2, reason2 := s.fc.snapshot(s.m); fs2 != nil || reason2 != reason {
+		t.Fatalf("reason changed: %+v %q", fs2, reason2)
 	}
 }
