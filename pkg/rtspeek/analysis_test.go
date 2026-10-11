@@ -108,6 +108,35 @@ func TestCollectorJitter(t *testing.T) {
 	}
 }
 
+func TestCollectorJitterIgnoresBFrameReordering(t *testing.T) {
+	media := newTestMedia()
+	f := media.Formats[0].(*format.H264)
+	t0 := time.Now()
+	// Decode order I0 P3 B1 B2 P6 B4 B5 ... arrives on a perfect 40 ms schedule.
+	c := newCollector()
+	i := 0
+	for g := 0; g < 100; g++ { // enough groups for the start-up transient to decay
+		for _, n := range []int{3 * g, 3*g + 3, 3*g + 1, 3*g + 2} {
+			if g > 0 && n == 3*g {
+				continue
+			}
+			c.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: uint32(n * 3600)}}, t0.Add(time.Duration(i)*40*time.Millisecond))
+			i++
+		}
+	}
+	if j := c.jitterMs(media); j > 0.01 {
+		t.Fatalf("B-frame stream on a perfect schedule has jitter %.3fms, want ~0", j)
+	}
+
+	// A step back of more than a second is a discontinuity and still counts.
+	c2 := newCollector()
+	c2.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: 1000000}}, t0)
+	c2.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: 1000000 - 2*90000}}, t0.Add(40*time.Millisecond))
+	if j := c2.jitterMs(media); j < 10 {
+		t.Fatalf("discontinuity jitter = %.3fms, want it counted", j)
+	}
+}
+
 func TestCollectorSurvivesTimestampWraparound(t *testing.T) {
 	c := newCollector()
 	media := newTestMedia()
