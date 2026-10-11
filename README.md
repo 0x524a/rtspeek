@@ -43,14 +43,17 @@ rtspeek --url rtsp://camera.local/stream --pretty=false
 | `--timeout` | `5s` | One deadline for dial, OPTIONS, DESCRIBE and the auth retry. |
 | `--pretty` | `true` | Indent the JSON. |
 | `--verbose` | `false` | Print a failure summary to stderr. |
-| `--debug` | `false` | Add `debug_trace` to the JSON: stage markers plus each request and response line. |
+| `--debug` | `false` | Add a `debug_trace` array to the JSON: stage markers plus each request and response line. |
+| `--fail` | `false` | Exit `1` when OPTIONS or DESCRIBE fails. The JSON is still printed. |
+| `--user` | none | Username, when the URL has none. Also read from `RTSPEEK_USER`. |
+| `--password-file` | none | Read the password from this file, or from stdin if `-`. Without it, `RTSPEEK_PASSWORD` is used. |
 | `--analyze` | `false` | Receive the stream after DESCRIBE and add an `analysis` object to the JSON. **Pulls live video and uses a camera session.** |
 | `--analyze-duration` | `5s` | How long to receive media once the first packet arrives. Maximum `60s`. |
 | `--analyze-transport` | `auto` | `auto` (UDP, falling back to TCP), `udp` or `tcp`. |
 | `--log-level` | `disabled` | `disabled`, `error`, `warn`, `info`, `debug` or `trace`. Only applies with `--log-console`. |
 | `--log-console` | `false` | Write pretty structured logs to stderr. |
 
-Exit code `0` means the tool ran, even if the stream did not answer. Check `describe_ok` for that. Exit code `1` means a usage or internal error.
+Exit code `0` means the tool ran, even if the stream did not answer. Check `describe_ok` for that, or pass `--fail` to exit `1` on a failed probe. Exit code `1` means a usage or internal error: a bad flag value, or a URL that is not `rtsp://` or `rtsps://`. Failures to reach the stream still exit `0`. The JSON has the same keys either way; keys are printed in alphabetical order.
 
 ## Read the output
 
@@ -58,18 +61,20 @@ A healthy stream:
 
 ```json
 {
-  "url": "rtsp://camera.local/stream",
-  "reachable": true,
-  "protocol": "rtsp",
   "describe_ok": true,
   "latency": 74.2,
+  "latency_ms": 74.2,
   "media_count": 1,
+  "protocol": "rtsp",
+  "reachable": true,
+  "url": "rtsp://camera.local/stream",
   "video_medias": [
     {
       "index": 0,
       "type": "video",
-      "payload_type": 96,
+      "clock_rate": 90000,
       "format": "H264",
+      "payload_type": 96,
       "resolution": { "width": 1920, "height": 1080 }
     }
   ]
@@ -80,13 +85,6 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
 
 ```json
 {
-  "url": "rtsp://camera.local/stream",
-  "reachable": true,
-  "protocol": "rtsp",
-  "describe_ok": false,
-  "latency": 5001.3,
-  "media_count": 0,
-  "error": "401 Unauthorized",
   "debug_trace": [
     "STAGE: start",
     "STAGE: options",
@@ -95,7 +93,15 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
     "STAGE: describe",
     "--> DESCRIBE rtsp://camera.local/stream",
     "← 401 Unauthorized"
-  ]
+  ],
+  "describe_ok": false,
+  "error": "RTSP describe failed: bad status code: 401 (Unauthorized)",
+  "latency": 5001.3,
+  "latency_ms": 5001.3,
+  "media_count": 0,
+  "protocol": "rtsp",
+  "reachable": true,
+  "url": "rtsp://camera.local/stream"
 }
 ```
 
@@ -103,19 +109,29 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
 |-------|---------|
 | `reachable` | The TCP connection succeeded before DESCRIBE. |
 | `describe_ok` | DESCRIBE returned 2xx and the SDP parsed. |
-| `latency` | Milliseconds from start to the final state. |
+| `latency`, `latency_ms` | Milliseconds from start to the final state. Both carry the same value. |
 | `media_count` | Number of tracks. |
 | `video_medias`, `audio_medias`, `other_medias` | Tracks by kind. Empty groups are left out. |
 | `error` | The underlying error text. Present only on failure. |
-| `debug_trace` | Present only with `--debug`. Header contents are not included. |
+| `error_code` | Stable failure reason, present only on failure: one of the reasons in [Classify failures](#classify-failures), or `invalid_url`. |
+| `failed_stage` | `connect`, `options` or `describe`, when known. |
+| `status_code` | The RTSP status code, when the server answered with an error. |
+| `debug_trace` | Present only with `--debug`. Request and status lines, plus the `Public`, `Server`, `WWW-Authenticate` and `Content-Base` response headers. Other headers are left out. |
 
-Resolution comes from the H.264 or H.265 SPS. If the stream sends no SPS, or it does not parse, `resolution` is left out.
+Resolution, `profile`, `level` and an RFC 6381 `codec_string` (for example `avc1.640028` or `hvc1.1.6.L63.90`) come from the H.264 or H.265 SPS. If the stream sends no SPS, or it does not parse, they are left out.
 
 The JSON has no failure-category field. Go callers can get one from the error; see [Classify failures](#classify-failures).
 
 ### Authentication
 
-Put credentials in the URL: `rtsp://user:pass@host:554/stream`. The password is replaced with `***` in the `url` field, `error` and `debug_trace`, and in logs, so output is safe to paste into tickets. Go callers can use `rtspeek.RedactURL` and `rtspeek.RedactText`. If the first DESCRIBE returns 401 with a digest challenge, rtspeek retries once. Multi-round auth and Basic fallback are not implemented.
+Put credentials in the URL: `rtsp://user:pass@host:554/stream`. That leaves the password in shell history and `ps` output, so you can pass it separately instead:
+
+```bash
+RTSPEEK_PASSWORD=secret rtspeek --url rtsp://host/stream --user admin
+echo secret | rtspeek --url rtsp://host/stream --user admin --password-file -
+```
+
+Using `--user` on a URL that already has credentials is an error. The password is replaced with `***` in the `url` field, `error` and `debug_trace`, and in logs, so output is safe to paste into tickets. Go callers can use `rtspeek.RedactURL` and `rtspeek.RedactText`. If the first DESCRIBE returns 401 with a digest challenge, rtspeek retries once. Multi-round auth and Basic fallback are not implemented.
 
 ## Analyze a stream
 
@@ -298,6 +314,7 @@ case rtspeek.ReasonTimeout, rtspeek.ReasonConnectionRefused:
 | `auth_required` | 401 or an authentication challenge. |
 | `not_found` | 404, usually a wrong path. |
 | `unsupported_scheme` | The scheme is not `rtsp://` or `rtsps://`. |
+| `invalid_url` | The URL is malformed. Only in the CLI JSON. |
 | `other` | Anything else, including some invalid-URL and media-processing errors. |
 
 `StreamError.Error()` returns the original message, so existing string matching keeps working.
@@ -345,6 +362,7 @@ GitHub Actions runs on every push and PR to `main`:
 |----------|--------------|
 | [`sonarcloud.yml`](.github/workflows/sonarcloud.yml) | Runs `go test -coverprofile=coverage.out ./...` and sends code and coverage to [SonarCloud](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek) (project `0x524a_rtspeek`, org `0x524a`). |
 | [`lint.yml`](.github/workflows/lint.yml) | Runs [`golangci-lint`](https://golangci-lint.run/) with [`.golangci.yml`](.golangci.yml): the standard linters plus `gofmt`, `goimports` and `misspell`. |
+| [`security.yml`](.github/workflows/security.yml) | Runs `govulncheck` (fails on any reachable vulnerability) and `gosec -severity high` (fails on high findings), on every push and PR and weekly. |
 | [`release-dry-run.yml`](.github/workflows/release-dry-run.yml) | Builds all release binaries and Docker images with `goreleaser release --snapshot --skip=publish`, so a broken release config fails before merge. Nothing is published. |
 | [`black-duck-security-scan-ci.yml`](.github/workflows/black-duck-security-scan-ci.yml) | Black Duck SCA and SAST scanning. **Disabled**: the license credentials are not configured on this repo. Re-enable with `gh workflow enable "CI Black Duck security scan"` once they are. |
 

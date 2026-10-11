@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -21,6 +22,24 @@ const (
 	LogLevelDebug
 	LogLevelTrace
 )
+
+// zerologLevel maps a LogLevel to the matching zerolog level. The numeric values
+// differ, so a plain conversion would log warnings as fatal.
+func zerologLevel(l LogLevel) zerolog.Level {
+	switch l {
+	case LogLevelError:
+		return zerolog.ErrorLevel
+	case LogLevelWarn:
+		return zerolog.WarnLevel
+	case LogLevelInfo:
+		return zerolog.InfoLevel
+	case LogLevelDebug:
+		return zerolog.DebugLevel
+	case LogLevelTrace:
+		return zerolog.TraceLevel
+	}
+	return zerolog.Disabled
+}
 
 // Logger wraps zerolog.Logger with RTSP-specific functionality
 type Logger struct {
@@ -177,7 +196,7 @@ func (l *Logger) NetworkOperation(operation, host string, duration time.Duration
 		return
 	}
 
-	event := l.zlog.WithLevel(zerolog.Level(level)).
+	event := l.zlog.WithLevel(zerologLevel(level)).
 		Str("operation", operation).
 		Str("host", host).
 		Dur("duration", duration)
@@ -295,6 +314,7 @@ func (l *Logger) GetLegacyTrace() []string {
 				if code, ok := entry.Fields["status_code"].(int); ok {
 					if msg, ok := entry.Fields["status_message"].(string); ok {
 						trace = append(trace, fmt.Sprintf("← %d %s", code, msg))
+						trace = append(trace, traceHeaders(entry.Fields["headers"])...)
 					}
 				}
 			}
@@ -317,4 +337,19 @@ func (l *Logger) addToBuffer(level LogLevel, message string, fields map[string]i
 // Clear clears the internal buffer
 func (l *Logger) Clear() {
 	l.buffer = l.buffer[:0]
+}
+
+// traceHeaders lists the response headers that identify a device or explain a
+// failure, as indented "Name: value" lines for the debug trace.
+func traceHeaders(h any) []string {
+	headers, _ := h.(map[string][]string)
+	var out []string
+	for _, name := range []string{"Public", "Server", "WWW-Authenticate", "Content-Base"} {
+		for k, v := range headers {
+			if strings.EqualFold(k, name) && len(v) > 0 {
+				out = append(out, "    "+name+": "+strings.Join(v, ", "))
+			}
+		}
+	}
+	return out
 }

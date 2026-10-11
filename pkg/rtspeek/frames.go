@@ -290,7 +290,7 @@ func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
 		t.haveTS = true
 		t.noteOrder(0)
 	} else {
-		t.delta(int64(int32(ts - t.lastTS)))
+		t.delta(int64(int32(ts - t.lastTS))) // #nosec G115 -- RFC 3550 signed 32-bit timestamp difference; wrapping is intended
 	}
 	t.lastTS = ts
 	if key {
@@ -395,7 +395,7 @@ func (t *trackFrames) noteOrder(pos int64) {
 
 // flushRun turns the pending run into timestamp jumps.
 func (t *trackFrames) flushRun() {
-	t.jumps += uint64(t.runN)
+	t.jumps += uint64(t.runN) // #nosec G115 -- runN is a non-negative count
 	for range t.runKeys {
 		t.recordKey(t.pos)
 	}
@@ -477,7 +477,7 @@ func (fc *frameCollector) snapshot(m *description.Media) (*FrameStats, string) {
 	fs := &FrameStats{
 		Frames:         t.frames,
 		Keyframes:      t.keyframes,
-		TimestampJumps: t.jumps + uint64(t.runN),
+		TimestampJumps: t.jumps + uint64(t.runN), // #nosec G115 -- runN is a non-negative count
 		BrokenFrames:   t.broken,
 		HasParamSets:   t.haveParams&t.needParams == t.needParams,
 		AdvertisedFPS:  round2(t.advertised),

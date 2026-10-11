@@ -1,0 +1,42 @@
+name: Security
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # New advisories appear without any code change, so rescan weekly.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      # The action checks out the repo and uses the newest Go release, not the
+      # version in go.mod: go.mod names a minimum, and a fixed standard-library
+      # vulnerability should not fail the scan. govulncheck reports only
+      # vulnerabilities the code can reach and exits non-zero on any of them. Its
+      # database has no severity levels, so every reachable one fails the job.
+      - name: govulncheck
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-input: stable
+          check-latest: true
+
+  gosec:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      # -severity high fails the job on high findings (gosec has no separate
+      # "critical" level). test/ holds the manual test proxy, which uses a seeded
+      # math/rand on purpose.
+      - name: gosec
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: -severity high -exclude-dir=test ./...
