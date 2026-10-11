@@ -35,7 +35,7 @@ func NewRTSPSession(timeout time.Duration, logger *Logger) *RTSPSession {
 			for k, v := range req.Header {
 				headers[k] = []string(v)
 			}
-			logger.RTSPRequest(string(req.Method), req.URL.String(), headers)
+			logger.RTSPRequest(string(req.Method), RedactURL(req.URL.String()), headers)
 		}
 
 		client.OnResponse = func(res *base.Response) {
