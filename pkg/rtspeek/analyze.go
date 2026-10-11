@@ -59,8 +59,10 @@ func (rs *RTSPSession) Analyze(ctx context.Context, desc *description.Session, o
 	}
 
 	col := newCollector()
+	fc := newFrameCollector(desc, o.Thresholds)
 	rs.client.OnPacketRTPAny(func(m *description.Media, f format.Format, p *rtp.Packet) {
 		col.packet(m, f, p, time.Now())
+		fc.packet(m, f, p)
 	})
 
 	if _, err := rs.client.Play(nil); err != nil {
@@ -107,7 +109,8 @@ func (rs *RTSPSession) Analyze(ctx context.Context, desc *description.Session, o
 	}
 	a.TransportFallback = rs.switchedTransport.Load()
 
-	a.Tracks = buildTracks(desc, stats, col, a.DurationMs)
+	a.interrupted = interrupted != nil
+	a.Tracks = buildTracks(desc, stats, col, fc, a.DurationMs)
 	a.Findings = evaluate(a, o.Thresholds)
 	if interrupted != nil {
 		a.Error = fmt.Sprintf("stream interrupted: %v", interrupted)
@@ -145,7 +148,7 @@ func transportName(p gortsplib.Protocol) string {
 
 // buildTracks combines library statistics with the collector's measurements.
 // stats may be nil when the stream was interrupted.
-func buildTracks(desc *description.Session, stats *gortsplib.ClientStats, col *collector, durationMs float64) []TrackAnalysis {
+func buildTracks(desc *description.Session, stats *gortsplib.ClientStats, col *collector, fc *frameCollector, durationMs float64) []TrackAnalysis {
 	tracks := make([]TrackAnalysis, 0, len(desc.Medias))
 	for i, m := range desc.Medias {
 		t := TrackAnalysis{Index: i, Type: string(m.Type)}
@@ -179,6 +182,7 @@ func buildTracks(desc *description.Session, stats *gortsplib.ClientStats, col *c
 		if durationMs > 0 {
 			t.BitrateKbps = round2(float64(t.Bytes) * 8 / durationMs)
 		}
+		t.Frames, t.FramesSkipped = fc.snapshot(m)
 		tracks = append(tracks, t)
 	}
 	return tracks

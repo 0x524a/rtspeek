@@ -25,6 +25,7 @@ type analyzeServer struct {
 	srv         *gortsplib.Server
 	done        chan struct{} // closed on cleanup so writers stop early
 	send        func(write func(seq uint16) bool)
+	payload     func(n int) []byte // payload of the n-th packet; nil sends a non-IDR slice
 
 	wg sync.WaitGroup
 }
@@ -59,6 +60,7 @@ func (h *analyzeServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Res
 			return
 		}
 		ts := uint32(0)
+		n := 0
 		h.send(func(seq uint16) bool {
 			select {
 			case <-h.done:
@@ -66,12 +68,17 @@ func (h *analyzeServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Res
 			default:
 			}
 			ts += 3600
+			pl := []byte{0x41, 0x9a, 0x00, 0x01, 0x02, 0x03}
+			if h.payload != nil {
+				pl = h.payload(n)
+			}
+			n++
 			_ = h.stream.WritePacketRTP(h.media, &rtp.Packet{
 				Header: rtp.Header{
 					Version: 2, PayloadType: 96, SequenceNumber: seq,
 					Timestamp: ts, SSRC: 1234, Marker: true,
 				},
-				Payload: []byte{0x41, 0x9a, 0x00, 0x01, 0x02, 0x03},
+				Payload: pl,
 			})
 			return true
 		})
@@ -342,5 +349,58 @@ func TestAnalyzeCancelled(t *testing.T) {
 	}
 	if a.Error == "" {
 		t.Fatalf("expected a cancellation error, got %+v", a)
+	}
+}
+
+func idrEvery(k int) func(int) []byte {
+	return func(n int) []byte {
+		if n%k == 0 {
+			return []byte{0x65, 0x88, 0x84, 0x00}
+		}
+		return []byte{0x41, 0x9a, 0x00, 0x01, 0x02, 0x03}
+	}
+}
+
+func TestAnalyzeReportsFrameStats(t *testing.T) {
+	url := startAnalyzeServer(t, &analyzeServer{send: steady(200, 0, 0), payload: idrEvery(5)})
+
+	info, err := DescribeStreamWithOptions(context.Background(), url, Options{Timeout: 2 * time.Second, Analyze: analyzeOpts()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := info.GetAnalysis()
+	if a == nil || len(a.Tracks) != 1 {
+		t.Fatalf("bad analysis: %+v", a)
+	}
+	fs := a.Tracks[0].Frames
+	if fs == nil {
+		t.Fatalf("expected frame stats, skipped=%q", a.Tracks[0].FramesSkipped)
+	}
+	if fs.Frames < 20 || fs.Keyframes < 2 || fs.BrokenFrames != 0 || fs.TimestampJumps != 0 {
+		t.Fatalf("unexpected frame stats: %+v", fs)
+	}
+	if fs.FPS < 24 || fs.FPS > 26 {
+		t.Fatalf("fps = %v, want about 25 (RTP time, not arrival time)", fs.FPS)
+	}
+	if fs.KeyframeIntervalMs < 190 || fs.KeyframeIntervalMs > 210 {
+		t.Fatalf("keyframe interval = %v, want about 200", fs.KeyframeIntervalMs)
+	}
+	// The test server announces no SPS/PPS and sends none in-band.
+	if findingByCode(a, FindingMissingParamSets) == nil {
+		t.Fatalf("expected missing_param_sets, got %+v", a.Findings)
+	}
+}
+
+func TestAnalyzeWithoutKeyframesReportsInfoInShortWindow(t *testing.T) {
+	url := startAnalyzeServer(t, &analyzeServer{send: steady(200, 0, 0)})
+
+	info, err := DescribeStreamWithOptions(context.Background(), url, Options{Timeout: 2 * time.Second, Analyze: analyzeOpts()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := info.GetAnalysis()
+	f := findingByCode(a, FindingNoKeyframe)
+	if f == nil || f.Severity != SeverityInfo {
+		t.Fatalf("expected info no_keyframe in a short window, got %+v", f)
 	}
 }
