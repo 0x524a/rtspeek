@@ -74,6 +74,10 @@ checksum:
 
 changelog:
   sort: asc
+  format: "{{ .Message }} ({{ .AbbrevSHA }})"
+  filters:
+    exclude:
+      - '^Merge (pull request|branch|remote-tracking branch|main)'
   groups:
     - title: Features
       regexp: '^feat(\(.+\))?!?:'
@@ -87,6 +91,9 @@ changelog:
     - title: CI / Tooling
       regexp: '^(ci|chore|build)(\(.+\))?!?:'
       order: 3
+    - title: Tests and refactoring
+      regexp: '^(test|refactor)(\(.+\))?!?:'
+      order: 4
     - title: Other
       order: 999
 
