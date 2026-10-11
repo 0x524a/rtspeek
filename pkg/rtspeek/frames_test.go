@@ -323,3 +323,142 @@ func TestFramesDecoderPanicIsRecovered(t *testing.T) {
 		t.Fatalf("reason changed: %+v %q", fs2, reason2)
 	}
 }
+
+// feedTS feeds one single-packet P frame per timestamp.
+func (s *h264Stream) feedTS(tss ...uint32) {
+	for _, ts := range tss {
+		s.frameAt(pAU(50), ts)
+	}
+}
+
+func TestFramesSustainedRateDropIsRelearned(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	ts := uint32(90000)
+	for i := 0; i < 60; i++ { // 2 s at 30 fps
+		s.feedTS(ts)
+		ts += 3000
+	}
+	for i := 0; i < 8; i++ { // 8 s at 1 fps
+		s.feedTS(ts)
+		ts += 90000
+	}
+	fs := s.stats()
+	if fs.TimestampJumps != 0 {
+		t.Fatalf("jumps = %d, want 0", fs.TimestampJumps)
+	}
+	// 67 intervals over 2 s of 30 fps plus 7 s of 1 fps (the first slow step
+	// is still 3000 ticks): 67 / 9 s = 7.44.
+	if fs.FPS < 7.3 || fs.FPS > 7.6 {
+		t.Fatalf("fps = %v, want about 7.44", fs.FPS)
+	}
+}
+
+func TestFramesLeapOnLastFrameCounts(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.run(10, 0)
+	s.feedTS(uint32(90000 + 10*step25 + 3600*1000))
+	fs := s.stats()
+	if fs.TimestampJumps != 1 || fs.FPS != 25 {
+		t.Fatalf("unexpected stats: %+v", fs)
+	}
+}
+
+func TestFramesAlternatingGarbageCountsJumps(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.run(10, 0)
+	base := uint32(90000 + 9*step25)
+	s.feedTS(base+500000000, base, base+500000000, base)
+	fs := s.stats()
+	if fs.TimestampJumps != 4 || fs.FPS != 25 {
+		t.Fatalf("unexpected stats: %+v", fs)
+	}
+}
+
+func TestFramesBackwardRunsAreNeverRelearned(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.run(10, 0)
+	ts := uint32(90000 + 9*step25)
+	for i := 0; i < 5; i++ {
+		ts -= 1000000
+		s.feedTS(ts)
+	}
+	fs := s.stats()
+	if fs.TimestampJumps != 5 || fs.FPS != 25 {
+		t.Fatalf("unexpected stats: %+v", fs)
+	}
+}
+
+func TestFramesLeapOnFirstDeltaDoesNotPoisonBaseline(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.feedTS(0, 500000000)
+	for i := 1; i <= 10; i++ {
+		s.feedTS(uint32(500000000 + i*step25))
+	}
+	fs := s.stats()
+	if fs.TimestampJumps != 1 || fs.FPS < 24.5 || fs.FPS > 25.5 {
+		t.Fatalf("unexpected stats: %+v", fs)
+	}
+}
+
+func TestFramesSameTimestampAUsCountOnce(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	for i := 0; i < 50; i++ {
+		ts := uint32(90000 + i*step25)
+		first := pAU(50)
+		if i%25 == 0 {
+			first = idrAU(200)
+		}
+		s.frameAt(first, ts)
+		for k := 0; k < 3; k++ { // each extra slice is its own marker'd access unit
+			if i%25 == 0 {
+				s.frameAt([][]byte{nalu(0x65, 80)}, ts)
+			} else {
+				s.frameAt(pAU(80), ts)
+			}
+		}
+	}
+	fs := s.stats()
+	if fs.Frames != 50 || fs.Keyframes != 2 || fs.FPS != 25 || fs.KeyframeIntervalMs != 1000 || fs.TimestampJumps != 0 {
+		t.Fatalf("unexpected stats: %+v", fs)
+	}
+}
+
+func TestFramesMarkerlessH265IsSkipped(t *testing.T) {
+	seq, ssrc := uint16(5), uint32(2)
+	enc := &rtph265.Encoder{PayloadType: 96, SSRC: &ssrc, InitialSequenceNumber: &seq, PayloadMaxSize: 100}
+	if err := enc.Init(); err != nil {
+		t.Fatal(err)
+	}
+	f := &format.H265{PayloadTyp: 96}
+	m := &description.Media{Type: description.MediaTypeVideo, Formats: []format.Format{f}}
+	fc := newFrameCollector(&description.Session{Medias: []*description.Media{m}}, Thresholds{})
+	for i := 0; i < 5; i++ {
+		b := make([]byte, 300)
+		b[0], b[1] = 1<<1, 1
+		pkts, err := enc.Encode([][]byte{b})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range pkts {
+			p.Timestamp = uint32(90000 + i*step25)
+			p.Marker = false
+			fc.packet(m, f, p)
+		}
+	}
+	// A malformed payload is a decoder error; no access unit ever completes.
+	fc.packet(m, f, &rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: 99, Timestamp: 1}, Payload: []byte{0x00}})
+	fs, skipped := fc.snapshot(m)
+	if fs != nil || skipped == "" {
+		t.Fatalf("want a skip reason, got %+v %q", fs, skipped)
+	}
+}
+
+func TestFramesInBandSPSOverridesAdvertisedFPS(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.fc.tracks[s.m].advertised = 12
+	s.frameAt([][]byte{sps720p30, nalu(0x68, 4), nalu(0x65, 100)}, 90000)
+	s.frameAt(pAU(50), 90000+step25)
+	if fs := s.stats(); fs.AdvertisedFPS != 30 {
+		t.Fatalf("advertised fps = %v, want 30", fs.AdvertisedFPS)
+	}
+}

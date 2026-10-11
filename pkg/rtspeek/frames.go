@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
@@ -61,7 +62,16 @@ type trackFrames struct {
 	haveTS      bool
 	lastTS      uint32
 	pos         int64 // RTP timeline in clock ticks, excluding jumps
-	sumAbs      int64 // sum of |delta| over accepted deltas
+	baseSum     int64 // sum of |delta| behind the baseline mean
+	baseN       int64
+	seed        []int64
+	seeded      bool
+	runN        int64 // pending run of outlier deltas
+	runPos      int64
+	runFirst    int64
+	runKeys     []int64
+	keyAtTS     bool
+	haveKey     bool
 	nDelta      int64
 	firstKeyPos int64
 	lastKeyPos  int64
@@ -202,36 +212,27 @@ func (t *trackFrames) pendingFragment(p *rtp.Packet) bool {
 	return t.splitsByTS && len(p.Payload) >= 2 && p.Payload[0]&0x1f == 28 && p.Payload[1]&0x40 == 0
 }
 
+// Number of consecutive consistent deltas that make a rate change real, and
+// number of initial deltas used to seed the baseline.
+const (
+	rateChangeRun = 3
+	seedDeltas    = 3
+)
+
 func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
-	t.frames++
 	for _, n := range au {
 		bit := t.paramBit(n)
 		if bit == 0 {
 			continue
 		}
 		t.haveParams |= bit
-		if bit == psSPS && t.advertised == 0 {
-			t.advertised = spsFPS(t.h265, n)
+		if bit == psSPS {
+			// An in-band SPS beats the SDP one, which is often stale.
+			if fps := spsFPS(t.h265, n); fps > 0 {
+				t.advertised = fps
+			}
 		}
 	}
-
-	if !t.haveTS {
-		t.haveTS = true
-	} else {
-		delta := int64(int32(ts - t.lastTS))
-		abs := delta
-		if abs < 0 {
-			abs = -abs
-		}
-		if t.nDelta >= 3 && t.sumAbs > 0 && float64(abs) > t.jumpFactor*float64(t.sumAbs)/float64(t.nDelta) {
-			t.jumps++ // the timeline carries on as if the jump never happened
-		} else {
-			t.pos += delta
-			t.sumAbs += abs
-			t.nDelta++
-		}
-	}
-	t.lastTS = ts
 
 	var key bool
 	if t.h265 {
@@ -239,13 +240,133 @@ func (t *trackFrames) accessUnit(au [][]byte, ts uint32) {
 	} else {
 		key = h264conf.IsRandomAccess(au)
 	}
-	if key {
-		if t.keyframes == 0 {
-			t.firstKeyPos = t.pos
+
+	// Several access units can share one RTP timestamp (marker bit on every
+	// slice, or on a separate SPS/PPS packet). They are one frame.
+	if t.haveTS && ts == t.lastTS {
+		if key {
+			t.noteKey()
 		}
-		t.keyframes++
-		t.lastKeyPos = t.pos
+		return
 	}
+
+	t.frames++
+	t.keyAtTS = false
+	if !t.haveTS {
+		t.haveTS = true
+	} else {
+		t.delta(int64(int32(ts - t.lastTS)))
+	}
+	t.lastTS = ts
+	if key {
+		t.noteKey()
+	}
+}
+
+func absInt(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// delta folds one timestamp step into the timeline. Steps far above the running
+// mean are held in a pending run: a lone one is a timestamp jump, but a run of
+// consistent ones is a real rate change (dynamic fps) and is learned.
+func (t *trackFrames) delta(d int64) {
+	if !t.seeded {
+		t.pos += d
+		t.seed = append(t.seed, d)
+		if len(t.seed) == seedDeltas {
+			t.commitSeed()
+		}
+		return
+	}
+	abs := absInt(d)
+	mean := float64(t.baseSum) / float64(t.baseN)
+	if mean <= 0 || float64(abs) <= t.jumpFactor*mean {
+		t.flushRun()
+		t.pos += d
+		t.nDelta++
+		t.baseSum += abs
+		t.baseN++
+		return
+	}
+	if t.runN > 0 && (t.runFirst <= 0 || d < t.runFirst/2 || d > 2*t.runFirst) {
+		t.flushRun()
+	}
+	if t.runN == 0 {
+		t.runFirst = d
+	}
+	t.runN++
+	t.runPos += d
+	if t.runN >= rateChangeRun && t.runFirst > 0 {
+		base := t.pos
+		t.pos += t.runPos
+		t.nDelta += t.runN
+		t.baseSum, t.baseN = t.runPos, t.runN
+		for _, rel := range t.runKeys {
+			t.recordKey(base + rel)
+		}
+		t.resetRun()
+	}
+}
+
+// commitSeed judges the first deltas against their median, so a leap among
+// them cannot poison the baseline.
+func (t *trackFrames) commitSeed() {
+	abs := make([]int64, len(t.seed))
+	for i, d := range t.seed {
+		abs[i] = absInt(d)
+	}
+	sort.Slice(abs, func(i, j int) bool { return abs[i] < abs[j] })
+	med := float64(abs[len(abs)/2])
+	for _, d := range t.seed {
+		if float64(absInt(d)) > t.jumpFactor*med {
+			t.jumps++
+			t.pos -= d
+			continue
+		}
+		t.nDelta++
+		t.baseSum += absInt(d)
+		t.baseN++
+	}
+	t.seed, t.seeded = nil, true
+}
+
+// flushRun turns the pending run into timestamp jumps.
+func (t *trackFrames) flushRun() {
+	t.jumps += uint64(t.runN)
+	for range t.runKeys {
+		t.recordKey(t.pos)
+	}
+	t.resetRun()
+}
+
+func (t *trackFrames) resetRun() {
+	t.runN, t.runPos, t.runFirst, t.runKeys = 0, 0, 0, nil
+}
+
+// noteKey counts a keyframe, once per RTP timestamp.
+func (t *trackFrames) noteKey() {
+	if t.keyAtTS {
+		return
+	}
+	t.keyAtTS = true
+	t.keyframes++
+	if t.runN > 0 {
+		t.runKeys = append(t.runKeys, t.runPos)
+		return
+	}
+	t.recordKey(t.pos)
+}
+
+func (t *trackFrames) recordKey(pos int64) {
+	if !t.haveKey {
+		t.haveKey = true
+		t.firstKeyPos = pos
+	}
+	t.lastKeyPos = pos
 }
 
 // paramBit classifies a NAL unit as SPS, PPS or VPS, or returns 0.
@@ -291,16 +412,20 @@ func (fc *frameCollector) snapshot(m *description.Media) (*FrameStats, string) {
 	if t.failed != "" {
 		return nil, t.failed
 	}
+	if t.h265 && t.frames == 0 && t.broken > 0 {
+		return nil, "no access unit completed on this H.265 track (marker bit never set?)"
+	}
 	fs := &FrameStats{
 		Frames:         t.frames,
 		Keyframes:      t.keyframes,
-		TimestampJumps: t.jumps,
+		TimestampJumps: t.jumps + uint64(t.runN),
 		BrokenFrames:   t.broken,
 		HasParamSets:   t.haveParams&t.needParams == t.needParams,
 		AdvertisedFPS:  round2(t.advertised),
 	}
-	if t.nDelta >= 1 && t.pos > 0 {
-		fs.FPS = round2(float64(t.nDelta) * t.clock / float64(t.pos))
+	n := t.nDelta + int64(len(t.seed))
+	if n >= 1 && t.pos > 0 {
+		fs.FPS = round2(float64(n) * t.clock / float64(t.pos))
 	}
 	if t.keyframes >= 2 && t.lastKeyPos > t.firstKeyPos {
 		fs.KeyframeIntervalMs = round2(float64(t.lastKeyPos-t.firstKeyPos) / float64(t.keyframes-1) / t.clock * 1000)

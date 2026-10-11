@@ -181,9 +181,9 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
 | `broken_frame` | warn at 0.5% of frames, error at 5% | A frame could not be reassembled, for example a lost fragment |
 | `missing_param_sets` | warn | A keyframe arrived with no SPS/PPS in the SDP or in-band |
 | `low_fps` | warn below 50% | Measured fps is below half the rate the SPS advertises |
-| `frame_analysis_skipped` | info | A video track in an unsupported codec |
+| `frame_analysis_skipped` | info | Unsupported video codec, or frame analysis could not run on the track |
 
-Frame analysis runs on H.264 and H.265 tracks. It measures fps and keyframe interval from RTP time, so network jitter does not skew them. `frames` is absent on audio tracks, and a video track in another codec gets `frames_skipped` plus an `info` finding. A short window can miss a long GOP, so `no_keyframe` is only a warning for windows of 10 s or more.
+Frame analysis runs on H.264 and H.265 tracks. It measures fps and keyframe interval from RTP time, so network jitter does not skew them. `frames` is absent on audio tracks, and a video track in another codec, or one where frame analysis could not run, gets `frames_skipped` plus an `info` finding. A short window can miss a long GOP, so `no_keyframe` is only a warning for windows of 10 s or more.
 
 These codes are stable. Thresholds are set in the library through `AnalyzeOptions.Thresholds`; CLI flags for them are planned.
 

@@ -82,18 +82,21 @@ warn/error levels. A zero field selects its default, as today.
    H.264/H.265 media it builds a `trackFrames` with the right decoder.
 2. The packet callback calls `col.packet(...)` then `fc.packet(m, f, p, now)`.
 3. `trackFrames.packet` feeds the decoder.
-   - Frame complete: record the RTP timestamp (backwards, or a leap beyond N
-     frame durations, counts as a `timestamp_jump`); detect IDR from NAL types
-     and update keyframe count and interval; note in-band SPS/PPS/VPS; count
-     the frame. Interval and fps use RTP time, not arrival time, so jitter
-     does not skew them.
+   - Frame complete: record the RTP timestamp (a step beyond
+     `TimestampJumpFactor` times the mean frame duration counts as a
+     `timestamp_jump`); detect IDR from NAL types and update keyframe count and
+     interval; note in-band SPS/PPS/VPS; count the frame. Interval and fps use
+     RTP time, not arrival time, so jitter does not skew them. Access units
+     that share one RTP timestamp count as one frame.
    - `ErrMorePacketsNeeded` is normal and ignored; any other decoder error
      increments `broken_frames`, counted once per RTP timestamp so a lost
      fragment sequence is one broken frame, not one per packet.
    - Timestamps can step backwards under B-frame reordering. A backwards step
      counts as a `timestamp_jump` only when its size exceeds
-     `TimestampJumpFactor` times the mean frame duration.
-4. After the window, `buildTracks` calls `fc.snapshot(m, durationMs)` to fill
+     `TimestampJumpFactor` times the mean frame duration. A sustained rate
+     change (3 or more consistent outlier steps) is re-learned instead of
+     counted as jumps.
+4. After the window, `buildTracks` calls `fc.snapshot(m)` to fill
    `TrackAnalysis.Frames`. fps = frames over the RTP time span.
 5. `evaluate` stays pure and derives the new findings from `TrackAnalysis.Frames`
    and `Thresholds`.
