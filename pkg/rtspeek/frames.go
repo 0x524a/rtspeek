@@ -98,8 +98,7 @@ func newFrameCollector(desc *description.Session, th Thresholds) *frameCollector
 			}
 			t.dec, t.splitsByTS, t.needParams = dec, true, psSPS|psPPS
 			t.morePackets, t.nonStarting = rtph264.ErrMorePacketsNeeded, rtph264.ErrNonStartingPacketAndNoPrevious
-			sps, pps := ct.SafeParams()
-			t.seedParams(sps, pps, nil)
+			t.seedParams(ct.SPS, ct.PPS, nil)
 		case *format.H265:
 			dec, err := ct.CreateDecoder()
 			if err != nil {
