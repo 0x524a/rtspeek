@@ -70,7 +70,22 @@ func h265Info(sps []byte) *codecInfo {
 			compat |= 1 << j
 		}
 	}
-	// The first 14 constraint bits, in stream order; the rest are zero.
+	cons := h265ConstraintBytes(p)
+	space := ""
+	if p.GeneralProfileSpace > 0 && p.GeneralProfileSpace < 4 {
+		space = string(rune('A' + p.GeneralProfileSpace - 1))
+	}
+	str := fmt.Sprintf("hvc1.%s%d.%X.%s%d", space, p.GeneralProfileIdc, compat, tierLetter, p.GeneralLevelIdc)
+	if len(cons) > 0 {
+		str += "." + strings.Join(cons, ".")
+	}
+	return &codecInfo{Profile: name + " (" + tier + " tier)", Level: level, CodecString: str}
+}
+
+// h265ConstraintBytes packs the first 14 general constraint flags, in stream
+// order, into the hex bytes of an RFC 6381 string. Trailing zero bytes are
+// dropped and the remaining bits are zero.
+func h265ConstraintBytes(p h265conf.SPS_ProfileTierLevel) []string {
 	var raw [6]byte
 	for i, f := range []bool{p.GeneralProgressiveSourceFlag, p.GeneralInterlacedSourceFlag,
 		p.GeneralNonPackedConstraintFlag, p.GeneralFrameOnlyConstraintFlag, p.GeneralMax12bitConstraintFlag,
@@ -81,23 +96,13 @@ func h265Info(sps []byte) *codecInfo {
 			raw[i/8] |= 0x80 >> (i % 8)
 		}
 	}
-	last := -1
-	for i, v := range raw {
-		if v != 0 {
-			last = i
-		}
+	n := len(raw)
+	for n > 0 && raw[n-1] == 0 {
+		n--
 	}
-	var cons []string
-	for i := 0; i <= last; i++ {
-		cons = append(cons, fmt.Sprintf("%X", raw[i]))
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("%X", raw[i])
 	}
-	space := ""
-	if p.GeneralProfileSpace > 0 && p.GeneralProfileSpace < 4 {
-		space = string(rune('A' + p.GeneralProfileSpace - 1))
-	}
-	str := fmt.Sprintf("hvc1.%s%d.%X.%s%d", space, p.GeneralProfileIdc, compat, tierLetter, p.GeneralLevelIdc)
-	if len(cons) > 0 {
-		str += "." + strings.Join(cons, ".")
-	}
-	return &codecInfo{Profile: name + " (" + tier + " tier)", Level: level, CodecString: str}
+	return out
 }
