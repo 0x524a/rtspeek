@@ -240,3 +240,21 @@ func TestEvaluateFramesSkippedAndAbsent(t *testing.T) {
 		t.Fatalf("audio track must add no frame findings: %+v", got.Findings)
 	}
 }
+
+func TestEvaluateReorderingMessageNamesDeclaredDepth(t *testing.T) {
+	for _, tc := range []struct {
+		declared *int
+		want     string
+	}{
+		{nil, "track 0 reorders frames (B-frames), depth 2"},
+		{new(3), "track 0 reorders frames (B-frames), depth 2, SPS declares 3"},
+	} {
+		a := &Analysis{DurationMs: 5000, Tracks: []TrackAnalysis{frameTrack(FrameStats{
+			Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true, ReorderedFrames: 5, MaxReorderDepth: 2, DeclaredReorderDepth: tc.declared,
+		})}}
+		f := findingByCode(&Analysis{Findings: evaluate(a, Thresholds{})}, FindingFrameReordering)
+		if f == nil || f.Message != tc.want {
+			t.Fatalf("finding = %+v, want message %q", f, tc.want)
+		}
+	}
+}
