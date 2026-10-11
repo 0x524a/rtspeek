@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -313,6 +314,7 @@ func (l *Logger) GetLegacyTrace() []string {
 				if code, ok := entry.Fields["status_code"].(int); ok {
 					if msg, ok := entry.Fields["status_message"].(string); ok {
 						trace = append(trace, fmt.Sprintf("← %d %s", code, msg))
+						trace = append(trace, traceHeaders(entry.Fields["headers"])...)
 					}
 				}
 			}
@@ -335,4 +337,19 @@ func (l *Logger) addToBuffer(level LogLevel, message string, fields map[string]i
 // Clear clears the internal buffer
 func (l *Logger) Clear() {
 	l.buffer = l.buffer[:0]
+}
+
+// traceHeaders lists the response headers that identify a device or explain a
+// failure, as indented "Name: value" lines for the debug trace.
+func traceHeaders(h any) []string {
+	headers, _ := h.(map[string][]string)
+	var out []string
+	for _, name := range []string{"Public", "Server", "WWW-Authenticate", "Content-Base"} {
+		for k, v := range headers {
+			if strings.EqualFold(k, name) && len(v) > 0 {
+				out = append(out, "    "+name+": "+strings.Join(v, ", "))
+			}
+		}
+	}
+	return out
 }

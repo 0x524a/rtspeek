@@ -172,6 +172,9 @@ type MediaInfo struct {
 	Format        string         `json:"format,omitempty"`
 	PayloadType   *uint8         `json:"payload_type,omitempty"`
 	Resolution    *Resolution    `json:"resolution,omitempty"`
+	Profile       string         `json:"profile,omitempty"`
+	Level         string         `json:"level,omitempty"`
+	CodecString   string         `json:"codec_string,omitempty"`
 	CodecSpecific map[string]any `json:"codec_specific,omitempty"`
 }
 

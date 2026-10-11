@@ -152,3 +152,57 @@ func TestRunAnalyzeUnreachableStillReportsError(t *testing.T) {
 		t.Fatalf("unreachable host should report the error and no analysis, got %q", out)
 	}
 }
+
+func TestWithCredentials(t *testing.T) {
+	t.Setenv("RTSPEEK_PASSWORD", "")
+	if err := os.Unsetenv("RTSPEEK_PASSWORD"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := withCredentials("rtsp://h/x", "", "", strings.NewReader(""))
+	if err != nil || got != "rtsp://h/x" {
+		t.Fatalf("no user: %q %v", got, err)
+	}
+	t.Setenv("RTSPEEK_PASSWORD", "p@ss")
+	got, err = withCredentials("rtsp://h/x", "bob", "", strings.NewReader(""))
+	if err != nil || got != "rtsp://bob:p%40ss@h/x" {
+		t.Fatalf("env password: %q %v", got, err)
+	}
+	got, err = withCredentials("rtsp://h/x", "bob", "-", strings.NewReader("fromstdin\n"))
+	if err != nil || got != "rtsp://bob:fromstdin@h/x" {
+		t.Fatalf("stdin password: %q %v", got, err)
+	}
+	f := t.TempDir() + "/pw"
+	if err := os.WriteFile(f, []byte("filepw\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = withCredentials("rtsp://h/x", "bob", f, nil); got != "rtsp://bob:filepw@h/x" {
+		t.Fatalf("file password: %q", got)
+	}
+	if _, err = withCredentials("rtsp://u:p@h/x", "bob", "", nil); err == nil {
+		t.Error("URL credentials plus --user should fail")
+	}
+	if _, err = withCredentials("rtsp://h/x", "", f, nil); err == nil {
+		t.Error("--password-file without --user should fail")
+	}
+	if _, err = withCredentials("rtsp://h/x", "bob", "/no/such/file", nil); err == nil {
+		t.Error("missing password file should fail")
+	}
+}
+
+func TestRunFailFlag(t *testing.T) {
+	args := []string{"rtspeek", "--url", "rtsp://127.0.0.1:1/x", "--timeout", "1s", "--pretty=false"}
+	var code int
+	out := captureStdout(t, func() { code = run(args) })
+	if code != 0 {
+		t.Errorf("without --fail: exit %d, want 0", code)
+	}
+	for _, k := range []string{`"error_code":"connection_refused"`, `"failed_stage":"connect"`} {
+		if !strings.Contains(out, k) {
+			t.Errorf("missing %s in %q", k, out)
+		}
+	}
+	captureStdout(t, func() { code = run(append(args, "--fail")) })
+	if code != 1 {
+		t.Errorf("with --fail: exit %d, want 1", code)
+	}
+}

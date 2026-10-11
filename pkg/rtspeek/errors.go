@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/bluenviron/gortsplib/v5/pkg/liberrors"
 )
 
 var (
@@ -20,13 +22,22 @@ const (
 	ReasonAuthRequired      = "auth_required"
 	ReasonNotFound          = "not_found"
 	ReasonUnsupportedScheme = "unsupported_scheme"
+	ReasonInvalidURL        = "invalid_url"
 	ReasonOther             = "other"
+)
+
+// Stages reported by FailedStage.
+const (
+	StageConnect  = "connect"
+	StageOptions  = "options"
+	StageDescribe = "describe"
 )
 
 // StreamError is an error that carries its failure reason, recorded where the
 // failure happened. Its message is the wrapped error's message unchanged.
 type StreamError struct {
 	Reason string // one of the Reason* constants
+	Stage  string // one of the Stage* constants, when known
 	Err    error
 }
 
@@ -48,11 +59,42 @@ func newStreamError(reason string, err error) error {
 // FailureReason returns the failure reason for err: the reason recorded on a
 // StreamError if there is one, otherwise the text-based Classify result.
 func FailureReason(err error) string {
+	if errors.Is(err, ErrInvalidURL) {
+		return ReasonInvalidURL
+	}
 	var se *StreamError
 	if errors.As(err, &se) {
 		return se.Reason
 	}
 	return globalClassifier.Classify(err)
+}
+
+// newStageError is newStreamError for a failure at a known stage.
+func newStageError(stage, reason string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &StreamError{Reason: reason, Stage: stage, Err: err}
+}
+
+// FailedStage returns the stage ("connect", "options" or "describe") at which err
+// happened, or "" when unknown.
+func FailedStage(err error) string {
+	var se *StreamError
+	if errors.As(err, &se) {
+		return se.Stage
+	}
+	return ""
+}
+
+// StatusCode returns the RTSP status code carried by err, or 0 when the failure
+// was not an RTSP error response.
+func StatusCode(err error) int {
+	var bad liberrors.ErrClientBadStatusCode
+	if errors.As(err, &bad) {
+		return int(bad.Code)
+	}
+	return 0
 }
 
 // ErrorClassifier provides structured error classification for RTSP operations.

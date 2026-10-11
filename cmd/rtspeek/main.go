@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	neturl "net/url"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -66,11 +68,17 @@ func newApp() *cli.App {
 			&cli.BoolFlag{Name: "analyze", Usage: "Receive the stream and report packet loss, jitter and bitrate (pulls live video and uses a camera session)"},
 			&cli.DurationFlag{Name: "analyze-duration", Usage: "How long to receive media with --analyze (max 60s)", Value: rtpeek.DefaultAnalyzeDuration},
 			&cli.StringFlag{Name: "analyze-transport", Usage: "Transport for --analyze: auto, udp or tcp", Value: "auto"},
+			&cli.BoolFlag{Name: "fail", Usage: "Exit 1 when OPTIONS or DESCRIBE fails (the JSON is still printed)"},
+			&cli.StringFlag{Name: "user", Usage: "Username, when the URL has none", EnvVars: []string{"RTSPEEK_USER"}},
+			&cli.StringFlag{Name: "password-file", Usage: "Read the password from this file, or from stdin if \"-\" (else $RTSPEEK_PASSWORD)"},
 			&cli.StringFlag{Name: "log-level", Usage: "Log level: disabled, error, warn, info, debug, trace", Value: "disabled"},
 			&cli.BoolFlag{Name: "log-console", Usage: "Enable pretty console logging to stderr", Value: false},
 		},
 		Action: func(c *cli.Context) error {
-			url := c.String("url")
+			url, err := withCredentials(c.String("url"), c.String("user"), c.String("password-file"), os.Stdin)
+			if err != nil {
+				return err
+			}
 			timeout := c.Duration("timeout")
 			pretty := c.Bool("pretty")
 			verbose := c.Bool("verbose")
@@ -110,6 +118,7 @@ func newApp() *cli.App {
 					return err
 				}
 			}
+			fail := c.Bool("fail")
 			info, err := rtpeek.DescribeStreamWithOptions(ctx, url, opts)
 			if err != nil {
 				// Print verbose error information to stderr if requested
@@ -119,7 +128,10 @@ func newApp() *cli.App {
 
 				// For partial results (connection successful but RTSP failed), output the info with error
 				if info != nil {
-					return outputFormatter.WriteStreamInfo(info, err)
+					if werr := outputFormatter.WriteStreamInfo(info, err); werr != nil {
+						return werr
+					}
+					return failIf(fail, err)
 				}
 
 				// For complete failures, output error JSON
@@ -130,7 +142,7 @@ func newApp() *cli.App {
 				if errors.Is(err, rtpeek.ErrInvalidURL) || rtpeek.FailureReason(err) == rtpeek.ReasonUnsupportedScheme {
 					return fmt.Errorf("invalid input: %s", rtpeek.RedactText(err.Error()))
 				}
-				return nil
+				return failIf(fail, err)
 			}
 
 			// Write main JSON output to stdout
@@ -159,4 +171,52 @@ func parseLogLevel(level string) rtpeek.LogLevel {
 	default:
 		return rtpeek.LogLevelDisabled
 	}
+}
+
+// failIf turns a failed probe into a non-zero exit when --fail is set.
+func failIf(fail bool, err error) error {
+	if !fail {
+		return nil
+	}
+	return fmt.Errorf("probe failed: %s", rtpeek.RedactText(err.Error()))
+}
+
+// withCredentials adds --user and the password to rawURL. The password comes
+// from passwordFile ("-" reads stdin) or $RTSPEEK_PASSWORD, so it stays out of
+// the command line. A URL that already carries credentials is left alone, and
+// combining it with --user is an error.
+func withCredentials(rawURL, user, passwordFile string, stdin io.Reader) (string, error) {
+	pass, havePass := os.LookupEnv("RTSPEEK_PASSWORD")
+	if passwordFile != "" {
+		var data []byte
+		var err error
+		if passwordFile == "-" {
+			data, err = io.ReadAll(stdin)
+		} else {
+			data, err = os.ReadFile(passwordFile)
+		}
+		if err != nil {
+			return "", fmt.Errorf("reading password: %w", err)
+		}
+		pass, havePass = strings.TrimRight(string(data), "\r\n"), true
+	}
+	if user == "" {
+		if passwordFile != "" {
+			return "", errors.New("--password-file needs --user")
+		}
+		return rawURL, nil // $RTSPEEK_PASSWORD alone does nothing
+	}
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return rawURL, nil // let the library report the bad URL
+	}
+	if u.User != nil {
+		return "", errors.New("the URL already has credentials; drop --user or remove them from the URL")
+	}
+	if havePass {
+		u.User = neturl.UserPassword(user, pass)
+	} else {
+		u.User = neturl.User(user)
+	}
+	return u.String(), nil
 }

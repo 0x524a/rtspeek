@@ -67,7 +67,7 @@ func DescribeStreamWithOptions(ctx context.Context, url string, opts Options) (S
 	if preflightErr := dialer.PreflightDial(ctx, parsedURL); preflightErr != nil {
 		info.Latency = float64(time.Since(start)) / float64(time.Millisecond)
 		info.Reachable = false
-		return info, newStreamError(classifyError(preflightErr), fmt.Errorf("connection failed: %w", preflightErr))
+		return info, newStageError(StageConnect, classifyError(preflightErr), fmt.Errorf("connection failed: %w", preflightErr))
 	}
 	info.Reachable = true
 

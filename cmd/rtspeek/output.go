@@ -37,6 +37,7 @@ func (of *OutputFormatter) WriteStreamInfo(info rtpeek.StreamInfo, describeErr e
 	output := of.buildOutput(info)
 	if describeErr != nil {
 		output["error"] = rtpeek.RedactText(describeErr.Error())
+		addFailureFields(output, describeErr)
 	}
 	return enc.Encode(output)
 }
@@ -58,6 +59,7 @@ func (of *OutputFormatter) WriteErrorOutput(url string, err error) error {
 		"media_count": 0,
 		"error":       rtpeek.RedactText(err.Error()),
 	}
+	addFailureFields(output, err)
 
 	return enc.Encode(output)
 }
@@ -95,4 +97,16 @@ func (of *OutputFormatter) buildOutput(info rtpeek.StreamInfo) map[string]any {
 	}
 
 	return output
+}
+
+// addFailureFields adds the machine-readable failure fields: error_code (a
+// stable reason), failed_stage and status_code, each only when known.
+func addFailureFields(output map[string]any, err error) {
+	output["error_code"] = rtpeek.FailureReason(err)
+	if stage := rtpeek.FailedStage(err); stage != "" {
+		output["failed_stage"] = stage
+	}
+	if code := rtpeek.StatusCode(err); code != 0 {
+		output["status_code"] = code
+	}
 }

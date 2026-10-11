@@ -28,12 +28,14 @@ func classifyMedia(idx int, m *description.Media) (MediaInfo, error) {
 					if r := bestResolution(parseH264SPS, [][]byte{ct.SPS}); r != nil {
 						mi.Resolution = r
 					}
+					mi.setCodecInfo(h264Info(ct.SPS))
 				}
 			case *format.H265:
 				if ct.SPS != nil {
 					if r := bestResolution(parseH265SPS, [][]byte{ct.SPS}); r != nil {
 						mi.Resolution = r
 					}
+					mi.setCodecInfo(h265Info(ct.SPS))
 				}
 			default:
 				return mi, fmt.Errorf("unsupported video format: %s", mi.Format)
@@ -54,4 +56,10 @@ func extractFormatName(f format.Format) string {
 	typeName = strings.TrimPrefix(typeName, "*")
 
 	return typeName
+}
+
+func (m *MediaInfo) setCodecInfo(ci *codecInfo) {
+	if ci != nil {
+		m.Profile, m.Level, m.CodecString = ci.Profile, ci.Level, ci.CodecString
+	}
 }
