@@ -1,12 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"net"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 
 	rtpeek "github.com/0x524A/rtspeek/pkg/rtspeek"
+	"github.com/bluenviron/gortsplib/v5/pkg/liberrors"
 )
 
 func TestParseLogLevel(t *testing.T) {
@@ -204,5 +208,106 @@ func TestRunFailFlag(t *testing.T) {
 	captureStdout(t, func() { code = run(append(args, "--fail")) })
 	if code != 1 {
 		t.Errorf("with --fail: exit %d, want 1", code)
+	}
+}
+
+func TestVersionFrom(t *testing.T) {
+	mod := &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}}
+	devel := &debug.BuildInfo{Main: debug.Module{Version: "(devel)"},
+		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "0123456789abcdef"}}}
+	bare := &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}
+	cases := []struct {
+		ld   string
+		bi   *debug.BuildInfo
+		ok   bool
+		want string
+	}{
+		{"v0.9.0", mod, true, "v0.9.0"},
+		{"dev", nil, false, "dev"},
+		{"dev", mod, true, "v1.2.3"},
+		{"dev", devel, true, "dev-0123456"},
+		{"dev", bare, true, "dev"},
+	}
+	for _, c := range cases {
+		if got := versionFrom(c.ld, c.bi, c.ok); got != c.want {
+			t.Errorf("versionFrom(%q) = %q, want %q", c.ld, got, c.want)
+		}
+	}
+}
+
+func TestWithCredentialsEdgeCases(t *testing.T) {
+	if err := os.Unsetenv("RTSPEEK_PASSWORD"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := withCredentials("rtsp://h/x", "bob", "", nil)
+	if err != nil || got != "rtsp://bob@h/x" {
+		t.Errorf("user only: %q %v", got, err)
+	}
+	if got, err = withCredentials("rtsp://h:bad port/x", "bob", "", nil); err != nil || got != "rtsp://h:bad port/x" {
+		t.Errorf("unparsable URL should pass through: %q %v", got, err)
+	}
+}
+
+func TestRunMissingPasswordFileIsUsageError(t *testing.T) {
+	var code int
+	captureStdout(t, func() {
+		code = run([]string{"rtspeek", "--url", "rtsp://h/x", "--user", "bob", "--password-file", "/no/such/file"})
+	})
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+}
+
+// closedStdout runs fn with os.Stdout replaced by a pipe whose reader is closed,
+// so every write fails.
+func closedStdout(t *testing.T, fn func()) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close()
+	old := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = old; _ = w.Close() }()
+	fn()
+}
+
+func TestRunOutputWriteFailures(t *testing.T) {
+	// A server that accepts and hangs up gives a partial result (info + error).
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	hangup := "rtsp://" + ln.Addr().String() + "/x"
+	for _, url := range []string{hangup, "rtsp://127.0.0.1:1/x", "http://example.com/x"} {
+		var code int
+		closedStdout(t, func() { code = run([]string{"rtspeek", "--url", url, "--timeout", "1s"}) })
+		if code != 1 {
+			t.Errorf("%s: exit %d, want 1 when stdout is broken", url, code)
+		}
+	}
+	var code int
+	captureStdout(t, func() { code = run([]string{"rtspeek", "--url", hangup, "--timeout", "1s", "--fail"}) })
+	if code != 1 {
+		t.Errorf("partial result with --fail: exit %d, want 1", code)
+	}
+}
+
+func TestFailureFieldsIncludeStatusCode(t *testing.T) {
+	out := map[string]any{}
+	addFailureFields(out, fmt.Errorf("x: %w", liberrors.ErrClientBadStatusCode{Code: 404, Message: "Not Found"}))
+	if out["status_code"] != 404 || out["error_code"] == "" {
+		t.Errorf("got %v", out)
 	}
 }

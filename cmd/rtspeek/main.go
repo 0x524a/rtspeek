@@ -21,12 +21,15 @@ var version = "dev"
 // appVersion returns the build version, falling back to the module version and
 // VCS revision that "go install" and "go build" embed.
 func appVersion() string {
-	if version != "dev" {
-		return version
-	}
 	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version
+	return versionFrom(version, bi, ok)
+}
+
+// versionFrom picks the ldflags version, else the module version, else the VCS
+// revision from build info.
+func versionFrom(ldflags string, bi *debug.BuildInfo, ok bool) string {
+	if ldflags != "dev" || !ok {
+		return ldflags
 	}
 	if v := bi.Main.Version; v != "" && v != "(devel)" {
 		return v
@@ -36,7 +39,7 @@ func appVersion() string {
 			return "dev-" + s.Value[:7]
 		}
 	}
-	return version
+	return ldflags
 }
 
 func main() {

@@ -362,6 +362,7 @@ GitHub Actions runs on every push and PR to `main`:
 |----------|--------------|
 | [`sonarcloud.yml`](.github/workflows/sonarcloud.yml) | Runs `go test -coverprofile=coverage.out ./...` and sends code and coverage to [SonarCloud](https://sonarcloud.io/summary/new_code?id=0x524a_rtspeek) (project `0x524a_rtspeek`, org `0x524a`). |
 | [`lint.yml`](.github/workflows/lint.yml) | Runs [`golangci-lint`](https://golangci-lint.run/) with [`.golangci.yml`](.golangci.yml): the standard linters plus `gofmt`, `goimports` and `misspell`. |
+| [`security.yml`](.github/workflows/security.yml) | Runs `govulncheck` (fails on any reachable vulnerability) and `gosec -severity high` (fails on high findings), on every push and PR and weekly. |
 | [`release-dry-run.yml`](.github/workflows/release-dry-run.yml) | Builds all release binaries and Docker images with `goreleaser release --snapshot --skip=publish`, so a broken release config fails before merge. Nothing is published. |
 | [`black-duck-security-scan-ci.yml`](.github/workflows/black-duck-security-scan-ci.yml) | Black Duck SCA and SAST scanning. **Disabled**: the license credentials are not configured on this repo. Re-enable with `gh workflow enable "CI Black Duck security scan"` once they are. |
 

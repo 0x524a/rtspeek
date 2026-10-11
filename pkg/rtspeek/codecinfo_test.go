@@ -77,3 +77,59 @@ func TestFailureDetails(t *testing.T) {
 func errBadStatus(code int) error {
 	return liberrors.ErrClientBadStatusCode{Code: base.StatusCode(code), Message: "x"}
 }
+
+func TestAnalyzeOptionsValidate(t *testing.T) {
+	if err := (AnalyzeOptions{}).Validate(); err != nil {
+		t.Errorf("defaults should validate: %v", err)
+	}
+	if err := (AnalyzeOptions{Transport: "sctp"}).Validate(); err == nil {
+		t.Error("unknown transport should fail")
+	}
+	if err := (AnalyzeOptions{Duration: 2 * MaxAnalyzeDuration}).Validate(); err == nil {
+		t.Error("too long duration should fail")
+	}
+}
+
+// spsBaseline11 is an x264 Constrained Baseline, level 1.1 SPS.
+var spsBaseline11 = []byte{
+	0x67, 0x42, 0xc0, 0x0b, 0xd9, 0x01, 0x41, 0xfb, 0x01, 0x10, 0x00, 0x00, 0x03, 0x00, 0x10, 0x00,
+	0x00, 0x03, 0x03, 0x20, 0xf1, 0x42, 0xa4, 0x80,
+}
+
+func TestH264InfoVariants(t *testing.T) {
+	cb := h264Info(spsBaseline11)
+	if cb == nil || cb.Profile != "Constrained Baseline" || cb.Level != "1.1" || cb.CodecString != "avc1.42C00B" {
+		t.Fatalf("constrained baseline: %+v", cb)
+	}
+	b1 := append([]byte(nil), spsBaseline11...)
+	b1[2] |= 0x10 // constraint_set3 with level_idc 11 means level 1b
+	if ci := h264Info(b1); ci == nil || ci.Level != "1b" {
+		t.Fatalf("level 1b: %+v", ci)
+	}
+	b2 := append([]byte(nil), spsBaseline11...)
+	b2[3] = 9
+	if ci := h264Info(b2); ci == nil || ci.Level != "1b" {
+		t.Fatalf("level_idc 9: %+v", ci)
+	}
+	odd := append([]byte(nil), sps720p30...)
+	odd[1] = 118
+	if ci := h264Info(odd); ci == nil || ci.Profile != "Profile 118" {
+		t.Fatalf("unknown profile: %+v", ci)
+	}
+}
+
+func TestH265InfoTierSpaceAndConstraints(t *testing.T) {
+	// Patch a parsed SPS through the builder: flip the tier bit (byte 3, bit 5)
+	// and the profile space (byte 3, bits 7-6) of the real vector.
+	sps := append([]byte(nil), sps265Main21...)
+	sps[3] |= 0x20 // high tier
+	hi := h265Info(sps)
+	if hi == nil || !strings.Contains(hi.Profile, "High tier") || !strings.Contains(hi.CodecString, ".H63") {
+		t.Fatalf("high tier: %+v", hi)
+	}
+	sps[3] |= 0x40 // profile space 1 -> "A"
+	sp := h265Info(sps)
+	if sp == nil || !strings.HasPrefix(sp.CodecString, "hvc1.A") {
+		t.Fatalf("profile space: %+v", sp)
+	}
+}

@@ -71,25 +71,25 @@ func h265Info(sps []byte) *codecInfo {
 		}
 	}
 	// The first 14 constraint bits, in stream order; the rest are zero.
-	var bits uint64
+	var raw [6]byte
 	for i, f := range []bool{p.GeneralProgressiveSourceFlag, p.GeneralInterlacedSourceFlag,
 		p.GeneralNonPackedConstraintFlag, p.GeneralFrameOnlyConstraintFlag, p.GeneralMax12bitConstraintFlag,
 		p.GeneralMax10bitConstraintFlag, p.GeneralMax8bitConstraintFlag, p.GeneralMax422ChromeConstraintFlag,
 		p.GeneralMax420ChromaConstraintFlag, p.GeneralMaxMonochromeConstraintFlag, p.GeneralIntraConstraintFlag,
 		p.GeneralOnePictureOnlyConstraintFlag, p.GeneralLowerBitRateConstraintFlag, p.GeneralMax14BitConstraintFlag} {
 		if f {
-			bits |= 1 << (47 - i)
+			raw[i/8] |= 0x80 >> (i % 8)
 		}
 	}
-	var cons []string
 	last := -1
-	for i := 0; i < 6; i++ {
-		if byte(bits>>(40-8*i)) != 0 {
+	for i, v := range raw {
+		if v != 0 {
 			last = i
 		}
 	}
+	var cons []string
 	for i := 0; i <= last; i++ {
-		cons = append(cons, fmt.Sprintf("%X", byte(bits>>(40-8*i))))
+		cons = append(cons, fmt.Sprintf("%X", raw[i]))
 	}
 	space := ""
 	if p.GeneralProfileSpace > 0 && p.GeneralProfileSpace < 4 {
