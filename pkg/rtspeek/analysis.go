@@ -30,6 +30,10 @@ const (
 	udpFallbackWait = 3 * time.Second
 )
 
+// noKeyframeWarnWindowMs is the shortest window in which a missing keyframe
+// is a warning. Shorter windows can legitimately miss a long GOP.
+const noKeyframeWarnWindowMs = 10000
+
 // Finding severities.
 const (
 	SeverityInfo  = "info"
@@ -39,13 +43,20 @@ const (
 
 // Finding codes. Once released these strings are stable.
 const (
-	FindingPacketLoss        = "packet_loss"
-	FindingHighJitter        = "high_jitter"
-	FindingNoPackets         = "no_packets"
-	FindingStreamInterrupted = "stream_interrupted"
-	FindingTransportFallback = "transport_fallback"
-	FindingSetupFailed       = "setup_failed"
-	FindingPlayFailed        = "play_failed"
+	FindingPacketLoss           = "packet_loss"
+	FindingHighJitter           = "high_jitter"
+	FindingNoPackets            = "no_packets"
+	FindingStreamInterrupted    = "stream_interrupted"
+	FindingTransportFallback    = "transport_fallback"
+	FindingSetupFailed          = "setup_failed"
+	FindingPlayFailed           = "play_failed"
+	FindingNoKeyframe           = "no_keyframe"
+	FindingKeyframeInterval     = "keyframe_interval"
+	FindingTimestampJump        = "timestamp_jump"
+	FindingBrokenFrame          = "broken_frame"
+	FindingMissingParamSets     = "missing_param_sets"
+	FindingLowFPS               = "low_fps"
+	FindingFrameAnalysisSkipped = "frame_analysis_skipped"
 )
 
 // Thresholds decide when a measurement becomes a warning or an error.
@@ -55,6 +66,12 @@ type Thresholds struct {
 	LossErrorPercent float64 // default 2
 	JitterWarnMs     float64 // default 30
 	JitterErrorMs    float64 // default 100
+
+	KeyframeIntervalWarnMs   float64 // default 10000
+	TimestampJumpFactor      float64 // default 10, times the mean frame duration
+	LowFPSRatio              float64 // default 0.5, of the rate the SPS advertises
+	BrokenFramesWarnPercent  float64 // default 0.5
+	BrokenFramesErrorPercent float64 // default 5
 }
 
 func (t Thresholds) withDefaults() Thresholds {
@@ -69,6 +86,21 @@ func (t Thresholds) withDefaults() Thresholds {
 	}
 	if t.JitterErrorMs <= 0 {
 		t.JitterErrorMs = 100
+	}
+	if t.KeyframeIntervalWarnMs <= 0 {
+		t.KeyframeIntervalWarnMs = 10000
+	}
+	if t.TimestampJumpFactor <= 0 {
+		t.TimestampJumpFactor = 10
+	}
+	if t.LowFPSRatio <= 0 {
+		t.LowFPSRatio = 0.5
+	}
+	if t.BrokenFramesWarnPercent <= 0 {
+		t.BrokenFramesWarnPercent = 0.5
+	}
+	if t.BrokenFramesErrorPercent <= 0 {
+		t.BrokenFramesErrorPercent = 5
 	}
 	return t
 }
@@ -136,6 +168,8 @@ type Analysis struct {
 	Tracks              []TrackAnalysis `json:"tracks"`
 	Findings            []Finding       `json:"findings"`
 	Error               string          `json:"error,omitempty"`
+
+	interrupted bool // the stream ended before the window did
 }
 
 // TrackAnalysis holds the measurements for one track.
@@ -151,6 +185,25 @@ type TrackAnalysis struct {
 	BitrateKbps  float64 `json:"bitrate_kbps"`
 	RTCPPackets  uint64  `json:"rtcp_packets"`
 	DecodeErrors uint64  `json:"decode_errors"`
+	// Frames is set for analyzed H.264 and H.265 tracks only.
+	Frames *FrameStats `json:"frames,omitempty"`
+	// FramesSkipped says why frame analysis did not run on a video track.
+	FramesSkipped string `json:"frames_skipped,omitempty"`
+}
+
+// FrameStats holds frame-level measurements for one H.264 or H.265 track.
+// FPS and KeyframeIntervalMs come from RTP time and are zero when fewer than
+// two frames (or keyframes) were seen.
+type FrameStats struct {
+	Frames             uint64  `json:"frames"`
+	FPS                float64 `json:"fps,omitempty"`
+	Keyframes          uint64  `json:"keyframes"`
+	KeyframeIntervalMs float64 `json:"keyframe_interval_ms,omitempty"`
+	TimestampJumps     uint64  `json:"timestamp_jumps"`
+	BrokenFrames       uint64  `json:"broken_frames"`
+	HasParamSets       bool    `json:"has_param_sets"`
+	// AdvertisedFPS is the rate in the SPS timing info, when present.
+	AdvertisedFPS float64 `json:"advertised_fps,omitempty"`
 }
 
 // Finding is one problem (or notable event) found during analysis.
@@ -187,6 +240,12 @@ func evaluate(a *Analysis, th Thresholds) []Finding {
 
 	for _, t := range a.Tracks {
 		idx := new(t.Index)
+		if t.FramesSkipped != "" {
+			findings = append(findings, Finding{
+				Severity: SeverityInfo, Code: FindingFrameAnalysisSkipped, Track: idx,
+				Message: fmt.Sprintf("frame analysis skipped on track %d: %s", t.Index, t.FramesSkipped),
+			})
+		}
 		if t.Packets == 0 {
 			if !allSilent {
 				findings = append(findings, Finding{
@@ -220,6 +279,9 @@ func evaluate(a *Analysis, th Thresholds) []Finding {
 				Message: fmt.Sprintf("%.1f ms jitter on track %d", t.JitterMs, t.Index),
 			})
 		}
+		if t.Frames != nil {
+			findings = append(findings, frameFindings(a, t, idx, th)...)
+		}
 	}
 
 	if a.TransportFallback {
@@ -231,6 +293,63 @@ func evaluate(a *Analysis, th Thresholds) []Finding {
 
 	sortFindings(findings)
 	return findings
+}
+
+// frameFindings derives the frame-level findings for one track.
+func frameFindings(a *Analysis, t TrackAnalysis, idx *int, th Thresholds) []Finding {
+	fs := t.Frames
+	var out []Finding
+	if fs.Keyframes == 0 && fs.Frames > 0 && !a.interrupted {
+		sev := SeverityInfo
+		if a.DurationMs >= noKeyframeWarnWindowMs {
+			sev = SeverityWarn
+		}
+		out = append(out, Finding{
+			Severity: sev, Code: FindingNoKeyframe, Track: idx,
+			Message: fmt.Sprintf("no keyframe arrived on track %d within %.1f s", t.Index, a.DurationMs/1000),
+		})
+	}
+	if fs.Keyframes >= 2 && fs.KeyframeIntervalMs >= th.KeyframeIntervalWarnMs {
+		out = append(out, Finding{
+			Severity: SeverityWarn, Code: FindingKeyframeInterval, Track: idx, Value: new(fs.KeyframeIntervalMs),
+			Message: fmt.Sprintf("keyframes on track %d are %.0f ms apart", t.Index, fs.KeyframeIntervalMs),
+		})
+	}
+	if fs.TimestampJumps > 0 {
+		out = append(out, Finding{
+			Severity: SeverityWarn, Code: FindingTimestampJump, Track: idx, Value: new(float64(fs.TimestampJumps)),
+			Message: fmt.Sprintf("%d RTP timestamp jump(s) on track %d", fs.TimestampJumps, t.Index),
+		})
+	}
+	if fs.BrokenFrames > 0 {
+		pct := float64(fs.BrokenFrames) / float64(fs.Frames+fs.BrokenFrames) * 100
+		sev := ""
+		switch {
+		case pct >= th.BrokenFramesErrorPercent:
+			sev = SeverityError
+		case pct >= th.BrokenFramesWarnPercent:
+			sev = SeverityWarn
+		}
+		if sev != "" {
+			out = append(out, Finding{
+				Severity: sev, Code: FindingBrokenFrame, Track: idx, Value: new(round2(pct)),
+				Message: fmt.Sprintf("%d broken frame(s) (%.2f%%) on track %d", fs.BrokenFrames, pct, t.Index),
+			})
+		}
+	}
+	if fs.Keyframes > 0 && !fs.HasParamSets {
+		out = append(out, Finding{
+			Severity: SeverityWarn, Code: FindingMissingParamSets, Track: idx,
+			Message: fmt.Sprintf("track %d sent a keyframe but no SPS/PPS, in the SDP or in-band", t.Index),
+		})
+	}
+	if fs.AdvertisedFPS > 0 && fs.FPS > 0 && fs.FPS < th.LowFPSRatio*fs.AdvertisedFPS {
+		out = append(out, Finding{
+			Severity: SeverityWarn, Code: FindingLowFPS, Track: idx, Value: new(fs.FPS),
+			Message: fmt.Sprintf("track %d delivers %.1f fps but the stream advertises %.1f", t.Index, fs.FPS, fs.AdvertisedFPS),
+		})
+	}
+	return out
 }
 
 var severityRank = map[string]int{SeverityError: 0, SeverityWarn: 1, SeverityInfo: 2}

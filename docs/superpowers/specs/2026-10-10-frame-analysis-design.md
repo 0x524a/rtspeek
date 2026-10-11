@@ -51,9 +51,14 @@ H.264/H.265 tracks and omitted otherwise:
   "keyframe_interval_ms": 2000,
   "timestamp_jumps": 0,
   "broken_frames": 0,
-  "has_param_sets": true
+  "has_param_sets": true,
+  "advertised_fps": 25
 }
 ```
+
+`advertised_fps` is present only when the SPS carries timing info. A video
+track that is not analyzed (unsupported codec, decoder setup failure) carries
+`frames_skipped` with the reason instead of `frames`.
 
 Finding codes (stable once released):
 
@@ -83,7 +88,11 @@ warn/error levels. A zero field selects its default, as today.
      the frame. Interval and fps use RTP time, not arrival time, so jitter
      does not skew them.
    - `ErrMorePacketsNeeded` is normal and ignored; any other decoder error
-     increments `broken_frames`.
+     increments `broken_frames`, counted once per RTP timestamp so a lost
+     fragment sequence is one broken frame, not one per packet.
+   - Timestamps can step backwards under B-frame reordering. A backwards step
+     counts as a `timestamp_jump` only when its size exceeds
+     `TimestampJumpFactor` times the mean frame duration.
 4. After the window, `buildTracks` calls `fc.snapshot(m, durationMs)` to fill
    `TrackAnalysis.Frames`. fps = frames over the RTP time span.
 5. `evaluate` stays pure and derives the new findings from `TrackAnalysis.Frames`
@@ -94,6 +103,9 @@ warn/error levels. A zero field selects its default, as today.
 - Frame analysis never fails the analysis. A decoder construction error yields
   an info `frame_analysis_skipped` for that track; packet stats still report.
 - The existing `recover` in `Analyze` covers parser panics on malformed NALs.
+  The packet callback runs on a gortsplib goroutine, outside that `recover`, so
+  `frameCollector.packet` carries its own `recover`. A panic marks that track
+  `frames_skipped` rather than crashing the process.
 - Fewer than 2 frames: no fps, no interval, no `low_fps`; never report 0 fps
   from too little data.
 - Interrupted stream: `no_keyframe` is suppressed, since a missing keyframe
