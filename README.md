@@ -195,7 +195,7 @@ These codes are stable. Thresholds are set in the library through `AnalyzeOption
 
 **Time limit.** One analysis takes at most `--timeout` + the first-packet wait (5s, plus 3s in `auto`) + `--analyze-duration` + 2s. A stream that never delivers packets ends after the first-packet wait with `no_packets`.
 
-**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network.
+**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network. Packets that arrive out of timestamp order because of B-frames are left out, so B-frames do not count as jitter.
 
 Out-of-order and duplicate packet counts are not reported: the underlying RTSP library reorders and drops duplicates before rtspeek sees them.
 
@@ -330,6 +330,13 @@ go test ./...
 golangci-lint run ./...
 go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1
 go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
+```
+
+**End-to-end testing.** [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md) lists manual scenarios against ffmpeg streams, mediamtx and, if you have one, a real camera. [`test/udpproxy`](test/udpproxy) is a small proxy that drops, delays or reorders the UDP media path, or drops one fragment of an H.264 keyframe, so loss and jitter findings can be tested without root:
+
+```bash
+go build -o /tmp/udpproxy ./test/udpproxy
+/tmp/udpproxy -upstream 127.0.0.1:8554 -loss 0.01      # then analyze rtsp://127.0.0.1:8555/PATH with --analyze-transport udp
 ```
 
 GitHub Actions runs on every push and PR to `main`:
