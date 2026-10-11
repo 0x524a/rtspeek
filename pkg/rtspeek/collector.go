@@ -53,6 +53,12 @@ func (c *collector) packet(m *description.Media, f format.Format, p *rtp.Packet,
 	}
 	t.packets++
 	if t.clock > 0 && t.haveLast {
+		// B-frames put packets out of timestamp order. Such a packet says nothing
+		// about network jitter, so leave it out and keep the last in-order one as
+		// the reference. A step back of a second or more is a real discontinuity.
+		if back := int64(int32(p.Timestamp - t.lastTS)); back < 0 && float64(-back) < t.clock {
+			return
+		}
 		// D = (arrival delta) - (RTP timestamp delta), both in clock units.
 		arrival := now.Sub(t.lastArrival).Seconds() * t.clock
 		media := float64(int32(p.Timestamp - t.lastTS))

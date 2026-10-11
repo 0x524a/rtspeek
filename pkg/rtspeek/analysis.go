@@ -56,6 +56,7 @@ const (
 	FindingBrokenFrame          = "broken_frame"
 	FindingMissingParamSets     = "missing_param_sets"
 	FindingLowFPS               = "low_fps"
+	FindingFrameReordering      = "frame_reordering"
 	FindingFrameAnalysisSkipped = "frame_analysis_skipped"
 )
 
@@ -204,6 +205,13 @@ type FrameStats struct {
 	HasParamSets       bool    `json:"has_param_sets"`
 	// AdvertisedFPS is the rate in the SPS timing info, when present.
 	AdvertisedFPS float64 `json:"advertised_fps,omitempty"`
+	// ReorderedFrames counts frames whose presentation time is earlier than a
+	// frame decoded before them, which means the encoder uses B-frames.
+	// MaxReorderDepth is the most frames any one of them overtook (capped at 16).
+	ReorderedFrames uint64 `json:"reordered_frames"`
+	MaxReorderDepth int    `json:"max_reorder_depth,omitempty"`
+	// DeclaredReorderDepth is what the SPS allows (0: no B-frames), when it says.
+	DeclaredReorderDepth *int `json:"declared_reorder_depth,omitempty"`
 }
 
 // Finding is one problem (or notable event) found during analysis.
@@ -347,6 +355,16 @@ func frameFindings(a *Analysis, t TrackAnalysis, idx *int, th Thresholds) []Find
 		out = append(out, Finding{
 			Severity: SeverityWarn, Code: FindingLowFPS, Track: idx, Value: new(fs.FPS),
 			Message: fmt.Sprintf("track %d delivers %.1f fps but the stream advertises %.1f", t.Index, fs.FPS, fs.AdvertisedFPS),
+		})
+	}
+	if fs.ReorderedFrames > 0 {
+		msg := fmt.Sprintf("track %d reorders frames (B-frames), depth %d", t.Index, fs.MaxReorderDepth)
+		if fs.DeclaredReorderDepth != nil {
+			msg += fmt.Sprintf(", SPS declares %d", *fs.DeclaredReorderDepth)
+		}
+		out = append(out, Finding{
+			Severity: SeverityInfo, Code: FindingFrameReordering, Track: idx, Value: new(float64(fs.MaxReorderDepth)),
+			Message: msg,
 		})
 	}
 	return out

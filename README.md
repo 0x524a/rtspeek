@@ -154,7 +154,8 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
         "timestamp_jumps": 0,
         "broken_frames": 0,
         "has_param_sets": true,
-        "advertised_fps": 25
+        "advertised_fps": 25,
+        "reordered_frames": 0
       }
     }
   ],
@@ -181,9 +182,12 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
 | `broken_frame` | warn at 0.5% of frames, error at 5% | A frame could not be reassembled, for example a lost fragment |
 | `missing_param_sets` | warn | A keyframe arrived with no SPS/PPS in the SDP or in-band |
 | `low_fps` | warn below 50% | Measured fps is below half the rate the SPS advertises |
+| `frame_reordering` | info | Frames arrive out of presentation order: the encoder uses B-frames. `value` is the reorder depth |
 | `frame_analysis_skipped` | info | Unsupported video codec, or frame analysis could not run on the track |
 
 Frame analysis runs on H.264 and H.265 tracks. It measures fps and keyframe interval from RTP time, so network jitter does not skew them. `frames` is absent on audio tracks, and a video track in another codec, or one where frame analysis could not run, gets `frames_skipped` plus an `info` finding. A short window can miss a long GOP, so `no_keyframe` is only a warning for windows of 10 s or more.
+
+B-frames show up as RTP timestamps that step backwards in arrival order. `reordered_frames` counts those frames and `max_reorder_depth` is how many earlier frames the worst one overtook (capped at 16). A short window can miss reordering if the GOP rarely uses it. `declared_reorder_depth` is what the SPS allows, when it says (0 means no B-frames). RTP carries no DTS, so decode timestamps are not reported.
 
 These codes are stable. Thresholds are set in the library through `AnalyzeOptions.Thresholds`; CLI flags for them are planned.
 
@@ -191,7 +195,7 @@ These codes are stable. Thresholds are set in the library through `AnalyzeOption
 
 **Time limit.** One analysis takes at most `--timeout` + the first-packet wait (5s, plus 3s in `auto`) + `--analyze-duration` + 2s. A stream that never delivers packets ends after the first-packet wait with `no_packets`.
 
-**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network.
+**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network. Packets that arrive out of timestamp order because of B-frames are left out, so B-frames do not count as jitter.
 
 Out-of-order and duplicate packet counts are not reported: the underlying RTSP library reorders and drops duplicates before rtspeek sees them.
 
@@ -326,6 +330,13 @@ go test ./...
 golangci-lint run ./...
 go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1
 go test -tags=integration -run TestDescribeStreamIntegration ./pkg/rtspeek
+```
+
+**End-to-end testing.** [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md) lists manual scenarios against ffmpeg streams, mediamtx and, if you have one, a real camera. [`test/udpproxy`](test/udpproxy) is a small proxy that drops, delays or reorders the UDP media path, or drops one fragment of an H.264 keyframe, so loss and jitter findings can be tested without root:
+
+```bash
+go build -o /tmp/udpproxy ./test/udpproxy
+/tmp/udpproxy -upstream 127.0.0.1:8554 -loss 0.01      # then analyze rtsp://127.0.0.1:8555/PATH with --analyze-transport udp
 ```
 
 GitHub Actions runs on every push and PR to `main`:

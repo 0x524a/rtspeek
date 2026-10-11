@@ -174,8 +174,43 @@ func TestFramesBackwardsStepsFromBFramesAreTolerated(t *testing.T) {
 	for _, n := range []int{0, 3, 1, 2, 6, 4, 5, 9, 7, 8} {
 		s.frameAt(pAU(50), uint32(90000+n*step25))
 	}
-	if fs := s.stats(); fs.TimestampJumps != 0 {
+	fs := s.stats()
+	if fs.TimestampJumps != 0 {
 		t.Fatalf("B-frame reordering counted as %d jumps", fs.TimestampJumps)
+	}
+	if fs.ReorderedFrames != 6 || fs.MaxReorderDepth != 1 {
+		t.Fatalf("reordered = %d depth = %d, want 6 and 1", fs.ReorderedFrames, fs.MaxReorderDepth)
+	}
+}
+
+func TestFramesDeepReorderingReportsDepth(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	// Hierarchical B: frame 4 is decoded before 1, 2 and 3.
+	for _, n := range []int{0, 4, 2, 1, 3, 8, 6, 5, 7} {
+		s.frameAt(pAU(50), uint32(90000+n*step25))
+	}
+	if fs := s.stats(); fs.MaxReorderDepth != 2 || fs.ReorderedFrames != 6 {
+		t.Fatalf("reordered = %d depth = %d, want 6 and 2", fs.ReorderedFrames, fs.MaxReorderDepth)
+	}
+}
+
+func TestFramesInOrderStreamIsNotReordered(t *testing.T) {
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1}, 1450)
+	s.run(20, 5)
+	if fs := s.stats(); fs.ReorderedFrames != 0 || fs.MaxReorderDepth != 0 {
+		t.Fatalf("in-order stream reported reordering: %+v", fs)
+	}
+}
+
+func TestFramesDeclaredReorderDepth(t *testing.T) {
+	// The test SPS carries a bitstream restriction with max_num_reorder_frames = 2.
+	s := newH264Stream(t, &format.H264{PayloadTyp: 96, PacketizationMode: 1, SPS: sps720p30}, 1450)
+	s.run(3, 0)
+	if fs := s.stats(); fs.DeclaredReorderDepth == nil || *fs.DeclaredReorderDepth != 2 {
+		t.Fatalf("declared = %v, want 2", fs.DeclaredReorderDepth)
+	}
+	if got := spsReorder(false, []byte{0x67}); got != -1 {
+		t.Fatalf("garbage SPS gave %d, want -1", got)
 	}
 }
 
@@ -460,5 +495,21 @@ func TestFramesInBandSPSOverridesAdvertisedFPS(t *testing.T) {
 	s.frameAt(pAU(50), 90000+step25)
 	if fs := s.stats(); fs.AdvertisedFPS != 30 {
 		t.Fatalf("advertised fps = %v, want 30", fs.AdvertisedFPS)
+	}
+}
+
+func TestSPSReorder(t *testing.T) {
+	// x264 baseline: pic_order_cnt_type 2, so output order is decode order.
+	spsBaseline := []byte{0x67, 0x42, 0xc0, 0x0a, 0xd9, 0x04, 0x26, 0xc0, 0x44, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x48, 0x99, 0x20, 0x00}
+	// x265 with bframes=3.
+	spsHEVC := []byte{0x42, 0x01, 0x01, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00, 0x90, 0x00, 0x00, 0x03, 0x00, 0x00, 0x03, 0x00, 0x1e, 0xa0, 0x20, 0x81, 0x05, 0x96, 0x56, 0x59, 0x24, 0xca, 0xf0, 0x16, 0x80, 0x80, 0x00, 0x00, 0x03, 0x00, 0x80, 0x00, 0x00, 0x0c, 0x84, 0x00}
+	if got := spsReorder(false, spsBaseline); got != 0 {
+		t.Fatalf("baseline H.264 = %d, want 0", got)
+	}
+	if got := spsReorder(true, spsHEVC); got < 2 {
+		t.Fatalf("H.265 with bframes=3 = %d, want at least 2", got)
+	}
+	if got := spsReorder(true, []byte{0x42, 0x01}); got != -1 {
+		t.Fatalf("garbage H.265 SPS gave %d, want -1", got)
 	}
 }

@@ -108,6 +108,35 @@ func TestCollectorJitter(t *testing.T) {
 	}
 }
 
+func TestCollectorJitterIgnoresBFrameReordering(t *testing.T) {
+	media := newTestMedia()
+	f := media.Formats[0].(*format.H264)
+	t0 := time.Now()
+	// Decode order I0 P3 B1 B2 P6 B4 B5 ... arrives on a perfect 40 ms schedule.
+	c := newCollector()
+	i := 0
+	for g := 0; g < 100; g++ { // enough groups for the start-up transient to decay
+		for _, n := range []int{3 * g, 3*g + 3, 3*g + 1, 3*g + 2} {
+			if g > 0 && n == 3*g {
+				continue
+			}
+			c.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: uint32(n * 3600)}}, t0.Add(time.Duration(i)*40*time.Millisecond))
+			i++
+		}
+	}
+	if j := c.jitterMs(media); j > 0.01 {
+		t.Fatalf("B-frame stream on a perfect schedule has jitter %.3fms, want ~0", j)
+	}
+
+	// A step back of more than a second is a discontinuity and still counts.
+	c2 := newCollector()
+	c2.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: 1000000}}, t0)
+	c2.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: 1000000 - 2*90000}}, t0.Add(40*time.Millisecond))
+	if j := c2.jitterMs(media); j < 10 {
+		t.Fatalf("discontinuity jitter = %.3fms, want it counted", j)
+	}
+}
+
 func TestCollectorSurvivesTimestampWraparound(t *testing.T) {
 	c := newCollector()
 	media := newTestMedia()
@@ -208,6 +237,8 @@ func TestEvaluateFrameFindings(t *testing.T) {
 		{"no keyframe means no param finding", FrameStats{Frames: 50}, 5000, false, FindingMissingParamSets, ""},
 		{"low fps", FrameStats{Frames: 50, FPS: 14.9, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, SeverityWarn},
 		{"fps at ratio", FrameStats{Frames: 50, FPS: 15, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
+		{"reordering", FrameStats{Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true, ReorderedFrames: 10, MaxReorderDepth: 2}, 5000, false, FindingFrameReordering, SeverityInfo},
+		{"no reordering", FrameStats{Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true}, 5000, false, FindingFrameReordering, ""},
 		{"no advertised fps", FrameStats{Frames: 50, FPS: 1, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
 	}
 	for _, tc := range cases {
@@ -236,5 +267,23 @@ func TestEvaluateFramesSkippedAndAbsent(t *testing.T) {
 	}
 	if len(got.Findings) != 1 {
 		t.Fatalf("audio track must add no frame findings: %+v", got.Findings)
+	}
+}
+
+func TestEvaluateReorderingMessageNamesDeclaredDepth(t *testing.T) {
+	for _, tc := range []struct {
+		declared *int
+		want     string
+	}{
+		{nil, "track 0 reorders frames (B-frames), depth 2"},
+		{new(3), "track 0 reorders frames (B-frames), depth 2, SPS declares 3"},
+	} {
+		a := &Analysis{DurationMs: 5000, Tracks: []TrackAnalysis{frameTrack(FrameStats{
+			Frames: 50, FPS: 25, Keyframes: 1, HasParamSets: true, ReorderedFrames: 5, MaxReorderDepth: 2, DeclaredReorderDepth: tc.declared,
+		})}}
+		f := findingByCode(&Analysis{Findings: evaluate(a, Thresholds{})}, FindingFrameReordering)
+		if f == nil || f.Message != tc.want {
+			t.Fatalf("finding = %+v, want message %q", f, tc.want)
+		}
 	}
 }
