@@ -75,8 +75,9 @@ Each row: publish command, analyze command, expected result. "No findings" means
 | T1 | UDP | analyze B4 with `udp` | `transport` udp, packets above 0, RTCP packets at least 1 |
 | T2 | TCP | analyze B4 with `tcp` | `transport` tcp, same packet count as T1 within 5% |
 | T3 | Auto picks UDP | analyze B4 with `auto` | `transport` udp, no `transport_fallback` |
-| T4 | Auto falls back | use a server with UDP disabled | `transport` tcp, info `transport_fallback` |
-| T5 | UDP forced, blocked | server with UDP disabled, `udp` | `no_packets` and `stream_interrupted` errors |
+| T4 | Auto falls back | TCP-only server (section 4.1), `auto` | `transport` tcp, info `transport_fallback` |
+| T5a | UDP forced, refused | TCP-only server (section 4.1), `udp` | error `setup_failed`, "461 (Unsupported Transport)" |
+| T5b | UDP forced, packets blocked | impairment proxy `-loss 1` (section 4), `udp` | error `no_packets` |
 
 ### 2.3 Frame analysis
 
@@ -90,8 +91,8 @@ Each row: publish command, analyze command, expected result. "No findings" means
 | F6 | Long GOP | `-g 250 -bf 0 -x264-params keyint=250:min-keyint=250:scenecut=0`, analyze 25 s | `keyframe_interval` warn at 10000 ms |
 | F7 | Short window, long GOP | same as F6, analyze 6 s | one keyframe at most, info `no_keyframe`, never a warn |
 | F8 | Timestamp leap | `-vf "setpts='PTS+if(gte(N,250),100000,0)'" -fps_mode passthrough -g 50 -bf 0`, analyze 22 s from publisher start | `timestamp_jumps` exactly 1, fps still 25, warn `timestamp_jump` |
-| F9 | Frame rate drop | `-vf "setpts='if(lt(N,250),PTS,PTS+(N-250)*4)'" -fps_mode passthrough -g 50 -bf 0`, analyze 22 s | no `timestamp_jump`, fps between 5 and 25, warn `low_fps` |
-| F10 | Missing parameter sets | encoder that sends no SPS/PPS in the SDP or in-band | warn `missing_param_sets` once a keyframe arrives |
+| F9 | Frame rate drop | `-vf "setpts='if(lt(N,250),PTS,PTS+(N-250)*4)'" -fps_mode passthrough -g 50 -bf 0`, analyze 22 s | no `timestamp_jump`, fps between 5 and 25, warn `low_fps`. A `high_jitter` warn (about 35 ms) is expected too: the rate change shifts RFC 3550 transit time and the estimate decays slowly at 6 packets/s. A constant `-vf fps=6` stream shows 6 ms |
+| F10 | Missing parameter sets | not reproducible with mediamtx, which adds SPS/PPS from the SDP to keyframes | covered by unit tests only |
 
 ### 2.4 Jitter
 
@@ -108,7 +109,7 @@ Uses the impairment proxy (section 4). These cannot be produced on plain loopbac
 |---|---|---|---|
 | L1 | Light loss | drop 1% of RTP packets | `packet_loss` warn, `lost` above 0, some `broken_frames` |
 | L2 | Heavy loss | drop 5% | `packet_loss` error, `broken_frame` warn or error by share of frames |
-| L3 | Lost fragment | drop one fragment of a large keyframe | exactly one broken frame per affected timestamp |
+| L3 | Lost fragment | drop one fragment of a large keyframe | `lost` 1, `broken_frames` 1. One frame in 300 is 0.33%, under the 0.5% limit, so no `broken_frame` finding |
 | L4 | Stream cut | kill the publisher mid-window | `stream_interrupted`, no `no_keyframe` finding, partial stats still reported |
 
 ### 2.6 Real camera
@@ -121,7 +122,15 @@ Run only with the owner's permission. It opens a live session and pulls video.
 | C2 | UDP, 15 s | same result as C1, or `transport_fallback` / `no_packets` if the network blocks UDP |
 | C3 | Camera with B-frames | `frame_reordering` info and no `high_jitter` caused by it |
 
-### 2.7 Robustness
+### 2.7 CLI
+
+| ID | Scenario | Expected |
+|---|---|---|
+| V1 | `--version` on a plain `go build` | `rtspeek version v0.x.y-...` from build info |
+| V2 | build with `-ldflags "-X main.version=v9.9.9"` | `rtspeek version v9.9.9` |
+| V3 | `go run ./cmd/rtspeek --version` | `rtspeek version dev` |
+
+### 2.8 Robustness
 
 | ID | Scenario | Expected |
 |---|---|---|
@@ -178,6 +187,22 @@ delay cannot be uneven for long: every packet behind a late one waits for it, so
 Only delays long enough to overflow the reorder buffer (about 1.5 s here) push it
 over the threshold, and then they also cause loss. J2 therefore needs those
 settings, or a real congested link.
+
+### 4.1 TCP-only server (T4, T5a)
+
+`test/e2e/udp-blocked.sh` runs these without touching the main test server. It
+starts a throwaway mediamtx with `rtspTransports: [tcp]` on port 9554 (config in a
+temp directory, `moq: no` so it does not clash with another instance on 8892),
+publishes one H.264 stream, runs T4 and T5a, then stops mediamtx and ffmpeg and
+deletes the temp directory.
+
+```bash
+MEDIAMTX=/path/to/mediamtx RTSPEEK=/tmp/rtspeek test/e2e/udp-blocked.sh
+```
+
+It exits 1 if a check fails. Afterwards `ss -lnt | grep 9554` shows nothing.
+T5b needs no extra server: use the impairment proxy with `-loss 1` against the
+normal test server.
 
 ## 5. Known limits
 
