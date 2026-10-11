@@ -134,3 +134,31 @@ func TestWriteStreamInfoAnalysisOnlyWhenPresent(t *testing.T) {
 		t.Fatalf("findings should be an empty array, got %v", got["findings"])
 	}
 }
+
+func TestWriteStreamInfoFrameStatsOnlyWhenPresent(t *testing.T) {
+	var buf bytes.Buffer
+	a := &rtpeek.Analysis{
+		Tracks: []rtpeek.TrackAnalysis{
+			{Index: 0, Type: "video", Packets: 10, Frames: &rtpeek.FrameStats{Frames: 5, FPS: 25, Keyframes: 1, HasParamSets: true}},
+			{Index: 1, Type: "audio", Packets: 10},
+			{Index: 2, Type: "video", Packets: 10, FramesSkipped: "MJPEG is not supported"},
+		},
+		Findings: []rtpeek.Finding{},
+	}
+	if err := NewOutputFormatter(&buf, false).WriteStreamInfo(stubInfo{analysis: a}, nil); err != nil {
+		t.Fatal(err)
+	}
+	tracks := decode(t, buf.Bytes())["analysis"].(map[string]any)["tracks"].([]any)
+	video := tracks[0].(map[string]any)
+	frames, ok := video["frames"].(map[string]any)
+	if !ok || frames["fps"] != float64(25) || frames["has_param_sets"] != true {
+		t.Fatalf("video frames missing or wrong: %v", video)
+	}
+	if _, ok := tracks[1].(map[string]any)["frames"]; ok {
+		t.Fatal("audio track must have no frames object")
+	}
+	skipped := tracks[2].(map[string]any)
+	if _, ok := skipped["frames"]; ok || skipped["frames_skipped"] != "MJPEG is not supported" {
+		t.Fatalf("skipped track wrong: %v", skipped)
+	}
+}

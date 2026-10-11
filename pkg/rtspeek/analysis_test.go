@@ -171,3 +171,70 @@ func TestNormalizeRejectsBadOptions(t *testing.T) {
 		t.Error("expected error for unknown transport")
 	}
 }
+
+func frameTrack(fs FrameStats) TrackAnalysis {
+	return TrackAnalysis{Packets: 100, Type: "video", Frames: &fs}
+}
+
+func TestFrameThresholdDefaults(t *testing.T) {
+	th := Thresholds{}.withDefaults()
+	if th.KeyframeIntervalWarnMs != 10000 || th.TimestampJumpFactor != 10 || th.LowFPSRatio != 0.5 ||
+		th.BrokenFramesWarnPercent != 0.5 || th.BrokenFramesErrorPercent != 5 {
+		t.Fatalf("unexpected frame defaults: %+v", th)
+	}
+}
+
+func TestEvaluateFrameFindings(t *testing.T) {
+	cases := []struct {
+		name       string
+		fs         FrameStats
+		durationMs float64
+		interrupt  bool
+		code       string
+		severity   string // empty: expect no finding with code
+	}{
+		{"interval below warn", FrameStats{Frames: 50, Keyframes: 2, KeyframeIntervalMs: 9999, HasParamSets: true}, 5000, false, FindingKeyframeInterval, ""},
+		{"interval at warn", FrameStats{Frames: 50, Keyframes: 2, KeyframeIntervalMs: 10000, HasParamSets: true}, 5000, false, FindingKeyframeInterval, SeverityWarn},
+		{"no keyframe short window is info", FrameStats{Frames: 50, HasParamSets: true}, 5000, false, FindingNoKeyframe, SeverityInfo},
+		{"no keyframe long window is warn", FrameStats{Frames: 50, HasParamSets: true}, 10000, false, FindingNoKeyframe, SeverityWarn},
+		{"no keyframe when interrupted", FrameStats{Frames: 50, HasParamSets: true}, 10000, true, FindingNoKeyframe, ""},
+		{"no keyframe when no frames", FrameStats{}, 10000, false, FindingNoKeyframe, ""},
+		{"timestamp jumps", FrameStats{Frames: 50, Keyframes: 1, TimestampJumps: 2, HasParamSets: true}, 5000, false, FindingTimestampJump, SeverityWarn},
+		{"no jumps", FrameStats{Frames: 50, Keyframes: 1, HasParamSets: true}, 5000, false, FindingTimestampJump, ""},
+		{"broken below warn", FrameStats{Frames: 1000, BrokenFrames: 4, Keyframes: 1, HasParamSets: true}, 5000, false, FindingBrokenFrame, ""},
+		{"broken at warn", FrameStats{Frames: 995, BrokenFrames: 5, Keyframes: 1, HasParamSets: true}, 5000, false, FindingBrokenFrame, SeverityWarn},
+		{"broken at error", FrameStats{Frames: 95, BrokenFrames: 5, Keyframes: 1, HasParamSets: true}, 5000, false, FindingBrokenFrame, SeverityError},
+		{"keyframe without params", FrameStats{Frames: 50, Keyframes: 2}, 5000, false, FindingMissingParamSets, SeverityWarn},
+		{"no keyframe means no param finding", FrameStats{Frames: 50}, 5000, false, FindingMissingParamSets, ""},
+		{"low fps", FrameStats{Frames: 50, FPS: 14.9, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, SeverityWarn},
+		{"fps at ratio", FrameStats{Frames: 50, FPS: 15, AdvertisedFPS: 30, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
+		{"no advertised fps", FrameStats{Frames: 50, FPS: 1, Keyframes: 1, HasParamSets: true}, 5000, false, FindingLowFPS, ""},
+	}
+	for _, tc := range cases {
+		a := &Analysis{DurationMs: tc.durationMs, interrupted: tc.interrupt, Tracks: []TrackAnalysis{frameTrack(tc.fs)}}
+		f := findingByCode(&Analysis{Findings: evaluate(a, Thresholds{})}, tc.code)
+		switch {
+		case tc.severity == "" && f != nil:
+			t.Errorf("%s: unexpected finding %+v", tc.name, f)
+		case tc.severity != "" && f == nil:
+			t.Errorf("%s: expected %s finding", tc.name, tc.code)
+		case tc.severity != "" && f.Severity != tc.severity:
+			t.Errorf("%s: severity = %s, want %s", tc.name, f.Severity, tc.severity)
+		}
+	}
+}
+
+func TestEvaluateFramesSkippedAndAbsent(t *testing.T) {
+	a := &Analysis{Tracks: []TrackAnalysis{
+		{Index: 0, Type: "video", Packets: 10, FramesSkipped: "unsupported codec"},
+		{Index: 1, Type: "audio", Packets: 10},
+	}}
+	got := &Analysis{Findings: evaluate(a, Thresholds{})}
+	f := findingByCode(got, FindingFrameAnalysisSkipped)
+	if f == nil || f.Severity != SeverityInfo || f.Track == nil || *f.Track != 0 {
+		t.Fatalf("expected info skipped finding on track 0, got %+v", f)
+	}
+	if len(got.Findings) != 1 {
+		t.Fatalf("audio track must add no frame findings: %+v", got.Findings)
+	}
+}
