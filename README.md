@@ -145,7 +145,17 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
       "bytes": 1445000,
       "bitrate_kbps": 2310.5,
       "rtcp_packets": 2,
-      "decode_errors": 0
+      "decode_errors": 0,
+      "frames": {
+        "frames": 120,
+        "fps": 24.98,
+        "keyframes": 2,
+        "keyframe_interval_ms": 2000,
+        "timestamp_jumps": 0,
+        "broken_frames": 0,
+        "has_param_sets": true,
+        "advertised_fps": 25
+      }
     }
   ],
   "findings": [
@@ -165,6 +175,15 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
 | `setup_failed` | error | The server rejected SETUP |
 | `play_failed` | error | The server rejected PLAY |
 | `transport_fallback` | info | No UDP packets arrived, so the client switched to TCP |
+| `no_keyframe` | warn for windows of 10 s or more, otherwise info | No keyframe arrived in the window |
+| `keyframe_interval` | warn at 10 s or more | Keyframes are far apart |
+| `timestamp_jump` | warn | RTP timestamp leapt, or stepped back by far more than B-frame reordering |
+| `broken_frame` | warn at 0.5% of frames, error at 5% | A frame could not be reassembled, for example a lost fragment |
+| `missing_param_sets` | warn | A keyframe arrived with no SPS/PPS in the SDP or in-band |
+| `low_fps` | warn below 50% | Measured fps is below half the rate the SPS advertises |
+| `frame_analysis_skipped` | info | A video track in an unsupported codec |
+
+Frame analysis runs on H.264 and H.265 tracks. It measures fps and keyframe interval from RTP time, so network jitter does not skew them. `frames` is absent on audio tracks, and a video track in another codec gets `frames_skipped` plus an `info` finding. A short window can miss a long GOP, so `no_keyframe` is only a warning for windows of 10 s or more.
 
 These codes are stable. Thresholds are set in the library through `AnalyzeOptions.Thresholds`; CLI flags for them are planned.
 
@@ -345,7 +364,7 @@ git push origin vX.Y.Z
 | Multi-round auth and Basic fallback | Planned |
 | Custom headers and User-Agent | Planned |
 | Export the raw SDP as JSON (opt-in) | Planned |
-| Frame-level analysis: frame rate, keyframe interval, timestamp jumps, bitstream errors | Planned |
+| Slice-level bitstream checks (frame_num gaps, missing references) and MJPEG/AV1/VP9 frame analysis | Planned |
 | Parameter-set, resolution and RTCP sender-report checks in analysis | Planned |
 | Threshold flags for `--analyze` | Planned |
 | SRTP (`rtsps://`) support in analysis | Planned |
