@@ -36,7 +36,7 @@ func (of *OutputFormatter) WriteStreamInfo(info rtpeek.StreamInfo, describeErr e
 
 	output := of.buildOutput(info)
 	if describeErr != nil {
-		output["error"] = describeErr.Error()
+		output["error"] = rtpeek.RedactText(describeErr.Error())
 	}
 	return enc.Encode(output)
 }
@@ -49,9 +49,9 @@ func (of *OutputFormatter) WriteErrorOutput(url string, err error) error {
 	}
 
 	output := map[string]any{
-		"url":         url,
+		"url":         rtpeek.RedactURL(url),
 		"describe_ok": false,
-		"error":       err.Error(),
+		"error":       rtpeek.RedactText(err.Error()),
 	}
 
 	return enc.Encode(output)

@@ -30,7 +30,7 @@ func DescribeStreamWithOptions(ctx context.Context, url string, opts Options) (S
 		}
 	}
 	parent := ctx
-	info := &streamInfo{URL: url, Protocol: "rtsp"}
+	info := &streamInfo{URL: RedactURL(url), Protocol: "rtsp"}
 	start := time.Now()
 
 	if !ValidateURL(url) {
