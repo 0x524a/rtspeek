@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -13,6 +15,27 @@ import (
 
 // version is set at build time via -ldflags "-X main.version=..." (see .goreleaser.yaml)
 var version = "dev"
+
+// appVersion returns the build version, falling back to the module version and
+// VCS revision that "go install" and "go build" embed.
+func appVersion() string {
+	if version != "dev" {
+		return version
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+			return "dev-" + s.Value[:7]
+		}
+	}
+	return version
+}
 
 func main() {
 	os.Exit(run(os.Args))
@@ -31,15 +54,15 @@ func run(args []string) int {
 // newApp builds the CLI app definition.
 func newApp() *cli.App {
 	return &cli.App{
-		Name:    "rtpeek",
-		Version: version,
+		Name:    "rtspeek",
+		Version: appVersion(),
 		Usage:   "Inspect an RTSP URL and output stream description JSON",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "url", Usage: "RTSP URL to inspect", Required: true},
 			&cli.DurationFlag{Name: "timeout", Usage: "Timeout for describe", Value: 5 * time.Second},
 			&cli.BoolFlag{Name: "pretty", Usage: "Pretty-print JSON output", Value: true},
 			&cli.BoolFlag{Name: "verbose", Usage: "Include failure reason on stderr"},
-			&cli.BoolFlag{Name: "debug", Usage: "Enable debug logging (legacy compatibility)"},
+			&cli.BoolFlag{Name: "debug", Usage: "Add a debug_trace array (stages and RTSP request/response lines) to the JSON output"},
 			&cli.BoolFlag{Name: "analyze", Usage: "Receive the stream and report packet loss, jitter and bitrate (pulls live video and uses a camera session)"},
 			&cli.DurationFlag{Name: "analyze-duration", Usage: "How long to receive media with --analyze (max 60s)", Value: rtpeek.DefaultAnalyzeDuration},
 			&cli.StringFlag{Name: "analyze-transport", Usage: "Transport for --analyze: auto, udp or tcp", Value: "auto"},
@@ -83,6 +106,9 @@ func newApp() *cli.App {
 					Duration:  c.Duration("analyze-duration"),
 					Transport: rtpeek.AnalyzeTransport(c.String("analyze-transport")),
 				}
+				if err := opts.Analyze.Validate(); err != nil {
+					return err
+				}
 			}
 			info, err := rtpeek.DescribeStreamWithOptions(ctx, url, opts)
 			if err != nil {
@@ -97,7 +123,14 @@ func newApp() *cli.App {
 				}
 
 				// For complete failures, output error JSON
-				return outputFormatter.WriteErrorOutput(url, err)
+				if werr := outputFormatter.WriteErrorOutput(url, err); werr != nil {
+					return werr
+				}
+				// A malformed URL is a usage error, like a bad flag.
+				if errors.Is(err, rtpeek.ErrInvalidURL) || rtpeek.FailureReason(err) == rtpeek.ReasonUnsupportedScheme {
+					return fmt.Errorf("invalid input: %s", err.Error())
+				}
+				return nil
 			}
 
 			// Write main JSON output to stdout

@@ -143,6 +143,12 @@ func (o AnalyzeOptions) normalize() (AnalyzeOptions, error) {
 	return o, nil
 }
 
+// Validate reports whether the options are acceptable, without running anything.
+func (o AnalyzeOptions) Validate() error {
+	_, err := o.normalize()
+	return err
+}
+
 // firstPacketBudget is the longest wait for the first packet.
 func (o AnalyzeOptions) firstPacketBudget() time.Duration {
 	if o.Transport == TransportAuto {

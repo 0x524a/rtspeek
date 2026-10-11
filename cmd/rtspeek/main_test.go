@@ -33,11 +33,11 @@ func TestParseLogLevel(t *testing.T) {
 
 func TestNewAppVersion(t *testing.T) {
 	app := newApp()
-	if app.Version != version {
-		t.Fatalf("app.Version = %q, want %q", app.Version, version)
+	if app.Version != appVersion() {
+		t.Fatalf("app.Version = %q, want %q", app.Version, appVersion())
 	}
-	if app.Name != "rtpeek" {
-		t.Fatalf("app.Name = %q, want %q", app.Name, "rtpeek")
+	if app.Name != "rtspeek" {
+		t.Fatalf("app.Name = %q, want %q", app.Name, "rtspeek")
 	}
 }
 
@@ -108,21 +108,39 @@ func TestRunWithLoggingFlags(t *testing.T) {
 	}
 }
 
-func TestRunAnalyzeRejectsUnknownTransport(t *testing.T) {
-	out := captureStdout(t, func() {
-		run([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--analyze", "--analyze-transport", "carrier-pigeon", "--pretty=false"})
-	})
-	if !strings.Contains(out, "unknown analyze transport") {
-		t.Fatalf("expected a transport error in the output, got %q", out)
+func TestRunAnalyzeBadFlagsAreUsageErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"--analyze", "--analyze-transport", "carrier-pigeon"},
+		{"--analyze", "--analyze-duration", "5m"},
+	} {
+		var code int
+		out := captureStdout(t, func() {
+			code = run(append([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--pretty=false"}, args...))
+		})
+		if code != 1 || out != "" {
+			t.Errorf("%v: code=%d out=%q, want exit 1 and no JSON", args, code, out)
+		}
 	}
 }
 
-func TestRunAnalyzeRejectsTooLongDuration(t *testing.T) {
+func TestRunInvalidURLExitsOneWithFullSchema(t *testing.T) {
+	var code int
 	out := captureStdout(t, func() {
-		run([]string{"rtspeek", "--url", "rtsp://127.0.0.1:1/stream", "--analyze", "--analyze-duration", "5m", "--pretty=false"})
+		code = run([]string{"rtspeek", "--url", "http://example.com/x", "--pretty=false"})
 	})
-	if !strings.Contains(out, "exceeds the maximum") {
-		t.Fatalf("expected a duration error in the output, got %q", out)
+	if code != 1 {
+		t.Errorf("exit code %d, want 1", code)
+	}
+	for _, k := range []string{`"reachable":false`, `"protocol":"rtsp"`, `"media_count":0`, `"latency_ms"`, `"describe_ok":false`} {
+		if !strings.Contains(out, k) {
+			t.Errorf("output missing %s: %q", k, out)
+		}
+	}
+}
+
+func TestAppName(t *testing.T) {
+	if got := newApp().Name; got != "rtspeek" {
+		t.Errorf("app name %q", got)
 	}
 }
 

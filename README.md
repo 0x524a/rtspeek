@@ -43,14 +43,14 @@ rtspeek --url rtsp://camera.local/stream --pretty=false
 | `--timeout` | `5s` | One deadline for dial, OPTIONS, DESCRIBE and the auth retry. |
 | `--pretty` | `true` | Indent the JSON. |
 | `--verbose` | `false` | Print a failure summary to stderr. |
-| `--debug` | `false` | Add `debug_trace` to the JSON: stage markers plus each request and response line. |
+| `--debug` | `false` | Add a `debug_trace` array to the JSON: stage markers plus each request and response line. |
 | `--analyze` | `false` | Receive the stream after DESCRIBE and add an `analysis` object to the JSON. **Pulls live video and uses a camera session.** |
 | `--analyze-duration` | `5s` | How long to receive media once the first packet arrives. Maximum `60s`. |
 | `--analyze-transport` | `auto` | `auto` (UDP, falling back to TCP), `udp` or `tcp`. |
 | `--log-level` | `disabled` | `disabled`, `error`, `warn`, `info`, `debug` or `trace`. Only applies with `--log-console`. |
 | `--log-console` | `false` | Write pretty structured logs to stderr. |
 
-Exit code `0` means the tool ran, even if the stream did not answer. Check `describe_ok` for that. Exit code `1` means a usage or internal error.
+Exit code `0` means the tool ran, even if the stream did not answer. Check `describe_ok` for that. Exit code `1` means a usage or internal error: a bad flag value, or a URL that is not `rtsp://` or `rtsps://`. Failures to reach the stream still exit `0`. The JSON has the same keys either way; keys are printed in alphabetical order.
 
 ## Read the output
 
@@ -58,18 +58,20 @@ A healthy stream:
 
 ```json
 {
-  "url": "rtsp://camera.local/stream",
-  "reachable": true,
-  "protocol": "rtsp",
   "describe_ok": true,
   "latency": 74.2,
+  "latency_ms": 74.2,
   "media_count": 1,
+  "protocol": "rtsp",
+  "reachable": true,
+  "url": "rtsp://camera.local/stream",
   "video_medias": [
     {
       "index": 0,
       "type": "video",
-      "payload_type": 96,
+      "clock_rate": 90000,
       "format": "H264",
+      "payload_type": 96,
       "resolution": { "width": 1920, "height": 1080 }
     }
   ]
@@ -80,13 +82,6 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
 
 ```json
 {
-  "url": "rtsp://camera.local/stream",
-  "reachable": true,
-  "protocol": "rtsp",
-  "describe_ok": false,
-  "latency": 5001.3,
-  "media_count": 0,
-  "error": "401 Unauthorized",
   "debug_trace": [
     "STAGE: start",
     "STAGE: options",
@@ -95,7 +90,15 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
     "STAGE: describe",
     "--> DESCRIBE rtsp://camera.local/stream",
     "← 401 Unauthorized"
-  ]
+  ],
+  "describe_ok": false,
+  "error": "RTSP describe failed: bad status code: 401 (Unauthorized)",
+  "latency": 5001.3,
+  "latency_ms": 5001.3,
+  "media_count": 0,
+  "protocol": "rtsp",
+  "reachable": true,
+  "url": "rtsp://camera.local/stream"
 }
 ```
 
@@ -103,7 +106,7 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
 |-------|---------|
 | `reachable` | The TCP connection succeeded before DESCRIBE. |
 | `describe_ok` | DESCRIBE returned 2xx and the SDP parsed. |
-| `latency` | Milliseconds from start to the final state. |
+| `latency`, `latency_ms` | Milliseconds from start to the final state. Both carry the same value. |
 | `media_count` | Number of tracks. |
 | `video_medias`, `audio_medias`, `other_medias` | Tracks by kind. Empty groups are left out. |
 | `error` | The underlying error text. Present only on failure. |

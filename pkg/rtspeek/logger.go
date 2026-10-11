@@ -22,6 +22,24 @@ const (
 	LogLevelTrace
 )
 
+// zerologLevel maps a LogLevel to the matching zerolog level. The numeric values
+// differ, so a plain conversion would log warnings as fatal.
+func zerologLevel(l LogLevel) zerolog.Level {
+	switch l {
+	case LogLevelError:
+		return zerolog.ErrorLevel
+	case LogLevelWarn:
+		return zerolog.WarnLevel
+	case LogLevelInfo:
+		return zerolog.InfoLevel
+	case LogLevelDebug:
+		return zerolog.DebugLevel
+	case LogLevelTrace:
+		return zerolog.TraceLevel
+	}
+	return zerolog.Disabled
+}
+
 // Logger wraps zerolog.Logger with RTSP-specific functionality
 type Logger struct {
 	zlog   zerolog.Logger
@@ -177,7 +195,7 @@ func (l *Logger) NetworkOperation(operation, host string, duration time.Duration
 		return
 	}
 
-	event := l.zlog.WithLevel(zerolog.Level(level)).
+	event := l.zlog.WithLevel(zerologLevel(level)).
 		Str("operation", operation).
 		Str("host", host).
 		Dur("duration", duration)

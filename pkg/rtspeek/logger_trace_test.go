@@ -65,3 +65,15 @@ func TestDescribeStreamDebugTrace(t *testing.T) {
 		t.Errorf("expected at least one response line in trace, got %v", trace)
 	}
 }
+
+func TestZerologLevelMapping(t *testing.T) {
+	cases := map[LogLevel]string{
+		LogLevelError: "error", LogLevelWarn: "warn", LogLevelInfo: "info",
+		LogLevelDebug: "debug", LogLevelTrace: "trace", LogLevelDisabled: "disabled",
+	}
+	for in, want := range cases {
+		if got := zerologLevel(in).String(); got != want {
+			t.Errorf("zerologLevel(%d) = %q, want %q", in, got, want)
+		}
+	}
+}

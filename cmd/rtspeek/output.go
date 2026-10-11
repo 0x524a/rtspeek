@@ -50,7 +50,12 @@ func (of *OutputFormatter) WriteErrorOutput(url string, err error) error {
 
 	output := map[string]any{
 		"url":         url,
+		"reachable":   false,
+		"protocol":    "rtsp",
 		"describe_ok": false,
+		"latency":     0.0,
+		"latency_ms":  0.0,
+		"media_count": 0,
 		"error":       err.Error(),
 	}
 
@@ -65,6 +70,7 @@ func (of *OutputFormatter) buildOutput(info rtpeek.StreamInfo) map[string]any {
 		"protocol":    info.GetProtocolName(),
 		"describe_ok": info.IsDescribeSucceeded(),
 		"latency":     info.LatencyMs(),
+		"latency_ms":  info.LatencyMs(),
 		"media_count": info.GetMediaCount(),
 	}
 
