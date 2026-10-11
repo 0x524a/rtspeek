@@ -128,7 +128,7 @@ func newApp() *cli.App {
 				}
 				// A malformed URL is a usage error, like a bad flag.
 				if errors.Is(err, rtpeek.ErrInvalidURL) || rtpeek.FailureReason(err) == rtpeek.ReasonUnsupportedScheme {
-					return fmt.Errorf("invalid input: %s", err.Error())
+					return fmt.Errorf("invalid input: %s", rtpeek.RedactText(err.Error()))
 				}
 				return nil
 			}

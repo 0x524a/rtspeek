@@ -118,7 +118,7 @@ The JSON has no failure-category field. Go callers can get one from the error; s
 
 ### Authentication
 
-Put credentials in the URL: `rtsp://user:pass@host:554/stream`. If the first DESCRIBE returns 401 with a digest challenge, rtspeek retries once. Multi-round auth and Basic fallback are not implemented.
+Put credentials in the URL: `rtsp://user:pass@host:554/stream`. The password is replaced with `***` in the `url` field, `error` and `debug_trace`, and in logs, so output is safe to paste into tickets. Go callers can use `rtspeek.RedactURL` and `rtspeek.RedactText`. If the first DESCRIBE returns 401 with a digest challenge, rtspeek retries once. Multi-round auth and Basic fallback are not implemented.
 
 ## Analyze a stream
 
