@@ -111,6 +111,8 @@ A stream that answered the TCP connection but rejected DESCRIBE, with `--debug`:
 | `describe_ok` | DESCRIBE returned 2xx and the SDP parsed. |
 | `latency`, `latency_ms` | Milliseconds from start to the final state. Both carry the same value. |
 | `media_count` | Number of tracks. |
+| `server` | The `Server` response header, when the server sends one. Often names the camera or server make. |
+| `supported_methods` | The methods in the OPTIONS `Public` header, for example `DESCRIBE`, `SETUP`, `PLAY`. Left out when the server sends none. |
 | `video_medias`, `audio_medias`, `other_medias` | Tracks by kind. Empty groups are left out. |
 | `error` | The underlying error text. Present only on failure. |
 | `error_code` | Stable failure reason, present only on failure: one of the reasons in [Classify failures](#classify-failures), or `invalid_url`. |
