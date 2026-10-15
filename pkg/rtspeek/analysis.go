@@ -181,13 +181,15 @@ type Analysis struct {
 
 // TrackAnalysis holds the measurements for one track.
 type TrackAnalysis struct {
-	Index        int     `json:"index"`
-	Type         string  `json:"type"`
-	Format       string  `json:"format,omitempty"`
-	Packets      uint64  `json:"packets"`
-	Lost         uint64  `json:"lost"`
-	LossPercent  float64 `json:"loss_percent"`
-	JitterMs     float64 `json:"jitter_ms"`
+	Index       int     `json:"index"`
+	Type        string  `json:"type"`
+	Format      string  `json:"format,omitempty"`
+	Packets     uint64  `json:"packets"`
+	Lost        uint64  `json:"lost"`
+	LossPercent float64 `json:"loss_percent"`
+	JitterMs    float64 `json:"jitter_ms"`
+	// JitterPeakMs is the highest running jitter in the window, after warm-up.
+	JitterPeakMs float64 `json:"jitter_peak_ms"`
 	Bytes        uint64  `json:"bytes"`
 	BitrateKbps  float64 `json:"bitrate_kbps"`
 	RTCPPackets  uint64  `json:"rtcp_packets"`
@@ -281,16 +283,19 @@ func evaluate(a *Analysis, th Thresholds) []Finding {
 				Message: fmt.Sprintf("%.2f%% RTP packet loss on track %d", t.LossPercent, t.Index),
 			})
 		}
+		jitter := max(t.JitterMs, t.JitterPeakMs)
+		msg := fmt.Sprintf("%.1f ms jitter on track %d", jitter, t.Index)
+		if t.JitterPeakMs > t.JitterMs {
+			msg = fmt.Sprintf("jitter on track %d peaked at %.1f ms (%.1f ms at the end of the window)", t.Index, t.JitterPeakMs, t.JitterMs)
+		}
 		switch {
-		case t.JitterMs >= th.JitterErrorMs:
+		case jitter >= th.JitterErrorMs:
 			findings = append(findings, Finding{
-				Severity: SeverityError, Code: FindingHighJitter, Track: idx, Value: new(t.JitterMs),
-				Message: fmt.Sprintf("%.1f ms jitter on track %d", t.JitterMs, t.Index),
+				Severity: SeverityError, Code: FindingHighJitter, Track: idx, Value: new(jitter), Message: msg,
 			})
-		case t.JitterMs >= th.JitterWarnMs:
+		case jitter >= th.JitterWarnMs:
 			findings = append(findings, Finding{
-				Severity: SeverityWarn, Code: FindingHighJitter, Track: idx, Value: new(t.JitterMs),
-				Message: fmt.Sprintf("%.1f ms jitter on track %d", t.JitterMs, t.Index),
+				Severity: SeverityWarn, Code: FindingHighJitter, Track: idx, Value: new(jitter), Message: msg,
 			})
 		}
 		if t.Frames != nil {

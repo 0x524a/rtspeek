@@ -161,6 +161,7 @@ func buildTracks(desc *description.Session, stats *gortsplib.ClientStats, col *c
 		}
 		col.mu.Unlock()
 		t.JitterMs = round2(col.jitterMs(m))
+		t.JitterPeakMs = round2(col.jitterPeakMs(m))
 
 		if stats != nil {
 			if sm, ok := stats.Session.Medias[m]; ok {

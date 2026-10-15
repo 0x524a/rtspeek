@@ -158,6 +158,7 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
       "lost": 37,
       "loss_percent": 0.89,
       "jitter_ms": 4.1,
+      "jitter_peak_ms": 11.8,
       "bytes": 1445000,
       "bitrate_kbps": 2310.5,
       "rtcp_packets": 2,
@@ -186,7 +187,7 @@ rtspeek --url rtsp://camera.local/stream --analyze --analyze-duration 15s --anal
 | Code | Severity | When |
 |------|----------|------|
 | `packet_loss` | warn at 0.5%, error at 2% | RTP packets missing from the sequence |
-| `high_jitter` | warn at 30 ms, error at 100 ms | RFC 3550 interarrival jitter |
+| `high_jitter` | warn at 30 ms, error at 100 ms | The higher of `jitter_ms` and `jitter_peak_ms` |
 | `no_packets` | error | No RTP arrived on any track, or on one track while others delivered |
 | `stream_interrupted` | error | The connection ended during the window |
 | `setup_failed` | error | The server rejected SETUP |
@@ -211,7 +212,7 @@ These codes are stable. Thresholds are set in the library through `AnalyzeOption
 
 **Time limit.** One analysis takes at most `--timeout` + the first-packet wait (5s, plus 3s in `auto`) + `--analyze-duration` + 2s. A stream that never delivers packets ends after the first-packet wait with `no_packets`.
 
-**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network. Packets that arrive out of timestamp order because of B-frames are left out, so B-frames do not count as jitter.
+**Jitter** is measured from packet arrival times. Video encoders send each frame as a burst, which raises it slightly even on a clean network. Packets that arrive out of timestamp order because of B-frames are left out, so B-frames do not count as jitter. `jitter_ms` is the RFC 3550 value at the end of the window. `jitter_peak_ms` is the highest value during the window, after the first 32 packets, so a burst of delay that ended earlier still shows. The `high_jitter` finding uses the higher of the two.
 
 Out-of-order and duplicate packet counts are not reported: the underlying RTSP library reorders and drops duplicates before rtspeek sees them.
 

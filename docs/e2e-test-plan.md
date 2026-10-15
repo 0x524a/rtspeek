@@ -99,7 +99,9 @@ Each row: publish command, analyze command, expected result. "No findings" means
 | ID | Scenario | Setup | Expected |
 |---|---|---|---|
 | J1 | B-frames do not look like jitter | analyze F2 and F3 | jitter under 10 ms, no `high_jitter` (regression for the B-frame jitter fix) |
-| J2 | Real jitter | proxy with `-delay-max 1500ms -reorder` (see section 4 for why smaller delays stay under 30 ms) | `high_jitter` warn at 30 ms or more, error at 100 ms or more |
+| J2 | Intermittent delay | proxy with `-spike-prob 0.05 -spike 300ms -seed 7` | `jitter_ms` stays low (about 2 ms) but `jitter_peak_ms` is 30 or more and `high_jitter` warns ("peaked at") |
+| J3 | Heavy delay | proxy with `-delay-max 1500ms -reorder` | `high_jitter` error, peak 100 ms or more |
+| J4 | Clean streams stay quiet | B-pyramid (F3) and a real camera, TCP and UDP | `jitter_peak_ms` under 20 ms, no `high_jitter` |
 
 ### 2.5 Loss and broken frames
 
@@ -181,12 +183,24 @@ Results with a 25 fps H.264 stream, UDP, 10 to 12 s:
 | TCP through the proxy | `-loss 0.5` | no effect, 0 lost (TCP path is untouched) |
 
 **Jitter limits.** `jitter_ms` is the RFC 3550 estimate at the end of the window,
-and it is measured after gortsplib's RTP reorder buffer. With in-order delivery a
-delay cannot be uneven for long: every packet behind a late one waits for it, so
-`-delay-max 500ms` or `-spike` only reached 8 to 21 ms, below the 30 ms warning.
-Only delays long enough to overflow the reorder buffer (about 1.5 s here) push it
-over the threshold, and then they also cause loss. J2 therefore needs those
-settings, or a real congested link.
+measured after gortsplib's RTP reorder buffer. With in-order delivery every packet
+behind a late one waits for it, and the end value hides a burst that ended earlier
+(`-spike-prob 0.05 -spike 300ms`: 2 to 4 ms at the end). `jitter_peak_ms` is the
+highest value during the window, with the first 32 packets skipped, and the finding
+uses the higher of the two. Measured on 25 fps H.264, UDP, 12 s:
+
+| Case | Flags | `jitter_ms` | `jitter_peak_ms` |
+|---|---|---|---|
+| Passthrough | none | 0.4 to 5 | 9 to 12 |
+| Delay in order | `-delay-max 500ms` | 22 to 29 | 30 to 34 |
+| Spikes | `-spike-prob 0.05 -spike 300ms` | 2 to 4 | 34 to 35 |
+| Heavy | `-delay-max 1500ms -reorder` | 48 | 121 |
+| B-pyramid, no proxy | none | 5 to 11 | 14 to 21 |
+| Real camera, TCP | none | 0 to 2.6 | 11 to 12 |
+
+A per-frame estimate (one sample per RTP timestamp) was tried and dropped: it reads
+about 31 ms on healthy B-frame and camera streams, so it cannot carry a 30 ms
+threshold.
 
 ### 4.1 TCP-only server (T4, T5a)
 
