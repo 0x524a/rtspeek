@@ -1,6 +1,6 @@
 module github.com/0x524A/rtspeek
 
-go 1.26.0
+go 1.26.9
 
 require (
 	github.com/bluenviron/gortsplib/v5 v5.6.7

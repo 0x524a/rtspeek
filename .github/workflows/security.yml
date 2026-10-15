@@ -36,7 +36,11 @@ jobs:
       # -severity high fails the job on high findings (gosec has no separate
       # "critical" level). test/ holds the manual test proxy, which uses a seeded
       # math/rand on purpose.
+      # The action's image ships an older Go with GOTOOLCHAIN=local, which cannot
+      # satisfy the go line in go.mod, so let it fetch the required toolchain.
       - name: gosec
         uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        env:
+          GOTOOLCHAIN: auto
         with:
           args: -severity high -exclude-dir=test ./...
