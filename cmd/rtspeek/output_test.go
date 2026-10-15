@@ -162,3 +162,40 @@ func TestWriteStreamInfoFrameStatsOnlyWhenPresent(t *testing.T) {
 		t.Fatalf("skipped track wrong: %v", skipped)
 	}
 }
+
+func TestOutputServerFields(t *testing.T) {
+	var buf bytes.Buffer
+	info := rtpeek.NewStreamInfo(rtpeek.StreamInfoParams{
+		URL: "rtsp://host/s", Reachable: true, Protocol: "rtsp", DescribeOK: true,
+		Server: "Acme/1.2", SupportedMethods: []string{"OPTIONS", "DESCRIBE"},
+	})
+	if err := NewOutputFormatter(&buf, false).WriteStreamInfo(info, nil); err != nil {
+		t.Fatal(err)
+	}
+	m := decode(t, buf.Bytes())
+	if m["server"] != "Acme/1.2" {
+		t.Errorf("server = %v", m["server"])
+	}
+	if got, _ := m["supported_methods"].([]any); len(got) != 2 {
+		t.Errorf("supported_methods = %v", m["supported_methods"])
+	}
+
+	buf.Reset()
+	plain := rtpeek.NewStreamInfo(rtpeek.StreamInfoParams{URL: "rtsp://host/s"})
+	if err := NewOutputFormatter(&buf, false).WriteStreamInfo(plain, nil); err != nil {
+		t.Fatal(err)
+	}
+	m = decode(t, buf.Bytes())
+	if _, ok := m["server"]; ok {
+		t.Error("server must be left out when empty")
+	}
+	if _, ok := m["supported_methods"]; ok {
+		t.Error("supported_methods must be left out when empty")
+	}
+
+	// A StreamInfo that does not implement ServerInfo still works.
+	buf.Reset()
+	if err := NewOutputFormatter(&buf, false).WriteStreamInfo(stubInfo{}, nil); err != nil {
+		t.Fatal(err)
+	}
+}

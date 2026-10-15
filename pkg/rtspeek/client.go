@@ -92,6 +92,8 @@ func DescribeStreamWithOptions(ctx context.Context, url string, opts Options) (S
 			description: desc,
 			trace:       trace,
 			err:         sessionErr,
+			server:      session.server,
+			methods:     session.methods,
 		}
 		if opts.Analyze != nil && sessionErr == nil {
 			<-sessionDone
@@ -113,6 +115,7 @@ func DescribeStreamWithOptions(ctx context.Context, url string, opts Options) (S
 	}
 
 	info.Latency = float64(time.Since(start)) / float64(time.Millisecond)
+	info.Server, info.SupportedMethods = result.server, result.methods
 
 	if result.err != nil {
 		if debugEnabled && result.trace != nil {
@@ -154,6 +157,8 @@ type rtspResult struct {
 	description *description.Session
 	trace       []string
 	err         error
+	server      string
+	methods     []string
 }
 
 // CheckReachable performs a quick DESCRIBE with a shorter timeout.

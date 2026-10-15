@@ -54,6 +54,18 @@ type streamInfo struct {
 	DebugTrace     []string             `json:"debug_trace,omitempty"`
 	RawDescription *description.Session `json:"-"`
 	Analysis       *Analysis            `json:"analysis,omitempty"`
+	// Server is the Server header and SupportedMethods the OPTIONS Public list.
+	Server           string   `json:"server,omitempty"`
+	SupportedMethods []string `json:"supported_methods,omitempty"`
+}
+
+// ServerInfo is implemented by the StreamInfo values this package returns. It is
+// a separate interface so StreamInfo itself stays unchanged.
+type ServerInfo interface {
+	// GetServer returns the Server header, or "" when the server sent none.
+	GetServer() string
+	// GetSupportedMethods returns the OPTIONS Public list, or nil.
+	GetSupportedMethods() []string
 }
 
 // StreamInfoParams holds the values NewStreamInfo needs. Derived values such as
@@ -70,6 +82,9 @@ type StreamInfoParams struct {
 	DebugTrace  []string
 	Raw         *description.Session
 	Analysis    *Analysis
+
+	Server           string
+	SupportedMethods []string
 }
 
 // NewStreamInfo builds a StreamInfo from p. It is meant for tests and tools that
@@ -89,6 +104,9 @@ func NewStreamInfo(p StreamInfoParams) StreamInfo {
 		DebugTrace:     p.DebugTrace,
 		RawDescription: p.Raw,
 		Analysis:       p.Analysis,
+
+		Server:           p.Server,
+		SupportedMethods: p.SupportedMethods,
 	}
 }
 
@@ -105,6 +123,10 @@ func (s *streamInfo) GetOtherMedias() []MediaInfo { return s.OtherMedias }
 func (s *streamInfo) GetMediaCount() int          { return s.MediaCount }
 func (s *streamInfo) Raw() *description.Session   { return s.RawDescription }
 func (s *streamInfo) GetAnalysis() *Analysis      { return s.Analysis }
+func (s *streamInfo) GetServer() string           { return s.Server }
+func (s *streamInfo) GetSupportedMethods() []string {
+	return s.SupportedMethods
+}
 
 func (s *streamInfo) GetMedias() []MediaInfo {
 	allMedias := make([]MediaInfo, 0, s.MediaCount)

@@ -87,6 +87,15 @@ func (of *OutputFormatter) buildOutput(info rtpeek.StreamInfo) map[string]any {
 		output["other_medias"] = other
 	}
 
+	if si, ok := info.(rtpeek.ServerInfo); ok {
+		if server := si.GetServer(); server != "" {
+			output["server"] = server
+		}
+		if methods := si.GetSupportedMethods(); len(methods) > 0 {
+			output["supported_methods"] = methods
+		}
+	}
+
 	if analysis := info.GetAnalysis(); analysis != nil {
 		output["analysis"] = analysis
 	}

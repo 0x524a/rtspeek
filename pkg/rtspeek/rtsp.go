@@ -3,6 +3,7 @@ package rtspeek
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,11 @@ type RTSPSession struct {
 
 	// switchedTransport is set when gortsplib falls back from UDP to TCP.
 	switchedTransport atomic.Bool
+
+	// server and methods come from the OPTIONS and DESCRIBE responses. They are
+	// written by PerformDescribe and read after it returns.
+	server  string
+	methods []string
 }
 
 // NewRTSPSession creates a new RTSP session with the specified timeout and logger.
@@ -95,7 +101,9 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 	}
 
 	optionsStart := time.Now()
-	if _, err := rs.client.Options(parsedURL); err != nil {
+	optionsRes, err := rs.client.Options(parsedURL)
+	rs.noteHeaders(optionsRes)
+	if err != nil {
 		if rs.logger != nil {
 			rs.logger.NetworkOperation("rtsp_options", parsedURL.Host, time.Since(optionsStart), err)
 		}
@@ -111,7 +119,8 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 	}
 
 	describeStart := time.Now()
-	desc, _, describeErr := rs.client.Describe(parsedURL)
+	desc, describeRes, describeErr := rs.client.Describe(parsedURL)
+	rs.noteHeaders(describeRes)
 	if describeErr != nil && isAuthChallenge(describeErr) && parsedURL.User != nil {
 		// Retry with authentication
 		if rs.logger != nil {
@@ -119,7 +128,8 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 		}
 
 		retryStart := time.Now()
-		desc2, _, retryErr := rs.client.Describe(parsedURL)
+		desc2, retryRes, retryErr := rs.client.Describe(parsedURL)
+		rs.noteHeaders(retryRes)
 		if retryErr == nil {
 			if rs.logger != nil {
 				rs.logger.NetworkOperation("rtsp_describe_retry", parsedURL.Host, time.Since(retryStart), nil)
@@ -145,6 +155,33 @@ func (rs *RTSPSession) PerformDescribe(ctx context.Context, parsedURL *base.URL)
 	}
 
 	return desc, rs.getTrace(), nil
+}
+
+// noteHeaders remembers the Server header and the OPTIONS Public list from a
+// response. A nil response (connection error) changes nothing.
+func (rs *RTSPSession) noteHeaders(res *base.Response) {
+	if res == nil {
+		return
+	}
+	if v := res.Header["Server"]; len(v) > 0 && rs.server == "" {
+		rs.server = strings.TrimSpace(v[0])
+	}
+	if v := res.Header["Public"]; len(v) > 0 && len(rs.methods) == 0 {
+		rs.methods = splitMethods(v)
+	}
+}
+
+// splitMethods turns Public header values ("OPTIONS, DESCRIBE") into a list.
+func splitMethods(values []string) []string {
+	var out []string
+	for _, v := range values {
+		for _, m := range strings.Split(v, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				out = append(out, m)
+			}
+		}
+	}
+	return out
 }
 
 // getTrace returns the debug trace if logging is enabled (for backward compatibility).

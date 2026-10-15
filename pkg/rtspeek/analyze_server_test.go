@@ -404,3 +404,52 @@ func TestAnalyzeWithoutKeyframesReportsInfoInShortWindow(t *testing.T) {
 		t.Fatalf("expected info no_keyframe in a short window, got %+v", f)
 	}
 }
+
+func TestDescribeReportsServerAndMethods(t *testing.T) {
+	url := startAnalyzeServer(t, &analyzeServer{})
+
+	info, err := DescribeStream(context.Background(), url, 2*time.Second)
+	if err != nil {
+		t.Fatalf("DescribeStream: %v", err)
+	}
+	si, ok := info.(ServerInfo)
+	if !ok {
+		t.Fatal("StreamInfo does not implement ServerInfo")
+	}
+	if si.GetServer() == "" {
+		t.Error("Server header missing")
+	}
+	var hasDescribe bool
+	for _, m := range si.GetSupportedMethods() {
+		hasDescribe = hasDescribe || m == "DESCRIBE"
+	}
+	if !hasDescribe {
+		t.Errorf("DESCRIBE not in %v", si.GetSupportedMethods())
+	}
+}
+
+func TestSplitMethods(t *testing.T) {
+	got := splitMethods([]string{"OPTIONS, DESCRIBE ,", " SETUP", ""})
+	want := []string{"OPTIONS", "DESCRIBE", "SETUP"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestNoteHeadersNilAndFirstWins(t *testing.T) {
+	rs := &RTSPSession{}
+	rs.noteHeaders(nil)
+	if rs.server != "" || rs.methods != nil {
+		t.Fatal("nil response must change nothing")
+	}
+	rs.noteHeaders(&base.Response{Header: base.Header{"Server": {"cam-a"}, "Public": {"OPTIONS, DESCRIBE"}}})
+	rs.noteHeaders(&base.Response{Header: base.Header{"Server": {"cam-b"}, "Public": {"PLAY"}}})
+	if rs.server != "cam-a" || len(rs.methods) != 2 {
+		t.Fatalf("first response must win, got %q %v", rs.server, rs.methods)
+	}
+}
