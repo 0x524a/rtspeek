@@ -1,6 +1,7 @@
 package rtspeek
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,9 @@ func TestEvaluateBoundaries(t *testing.T) {
 		{"jitter below warn", TrackAnalysis{Packets: 100, JitterMs: 29.9}, FindingHighJitter, ""},
 		{"jitter at warn", TrackAnalysis{Packets: 100, JitterMs: 30}, FindingHighJitter, SeverityWarn},
 		{"jitter at error", TrackAnalysis{Packets: 100, JitterMs: 100}, FindingHighJitter, SeverityError},
+		{"peak at warn, calm end", TrackAnalysis{Packets: 100, JitterMs: 2, JitterPeakMs: 30}, FindingHighJitter, SeverityWarn},
+		{"peak at error, calm end", TrackAnalysis{Packets: 100, JitterMs: 2, JitterPeakMs: 100}, FindingHighJitter, SeverityError},
+		{"peak below warn", TrackAnalysis{Packets: 100, JitterMs: 2, JitterPeakMs: 29.9}, FindingHighJitter, ""},
 	}
 	for _, tc := range cases {
 		a := &Analysis{Tracks: []TrackAnalysis{tc.track}}
@@ -285,5 +289,50 @@ func TestEvaluateReorderingMessageNamesDeclaredDepth(t *testing.T) {
 		if f == nil || f.Message != tc.want {
 			t.Fatalf("finding = %+v, want message %q", f, tc.want)
 		}
+	}
+}
+
+func TestJitterFindingMessageNamesThePeak(t *testing.T) {
+	a := &Analysis{Tracks: []TrackAnalysis{{Packets: 100, JitterMs: 2, JitterPeakMs: 40}}}
+	f := findingByCode(&Analysis{Findings: evaluate(a, Thresholds{})}, FindingHighJitter)
+	if f == nil || f.Value == nil || *f.Value != 40 || !strings.Contains(f.Message, "peaked at 40.0 ms") || !strings.Contains(f.Message, "2.0 ms at the end") {
+		t.Fatalf("unexpected finding: %+v", f)
+	}
+}
+
+// A burst of delay that ends before the window does leaves little in the final
+// RFC 3550 value, but the peak keeps it.
+func TestCollectorJitterPeakKeepsEarlyBurst(t *testing.T) {
+	c := newCollector()
+	media := newTestMedia()
+	f := media.Formats[0].(*format.H264)
+	t0 := time.Now()
+	for i := 0; i < 400; i++ {
+		at := t0.Add(time.Duration(i) * 40 * time.Millisecond)
+		if i >= 100 && i < 110 && i%2 == 0 {
+			at = at.Add(300 * time.Millisecond) // late packets, then back to the schedule
+		}
+		c.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: uint32(i * 3600)}}, at)
+	}
+	end, peak := c.jitterMs(media), c.jitterPeakMs(media)
+	if peak < 30 || end > 1 {
+		t.Fatalf("end = %.2f ms, peak = %.2f ms; want a calm end and a peak of 30 ms or more", end, peak)
+	}
+}
+
+func TestCollectorJitterPeakSkipsWarmup(t *testing.T) {
+	c := newCollector()
+	media := newTestMedia()
+	f := media.Formats[0].(*format.H264)
+	t0 := time.Now()
+	// A startup burst: the first packets all arrive at once.
+	for i := 0; i < jitterWarmup; i++ {
+		c.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: uint32(i * 3600)}}, t0)
+	}
+	for i := jitterWarmup; i < 300; i++ {
+		c.packet(media, f, &rtp.Packet{Header: rtp.Header{Timestamp: uint32(i * 3600)}}, t0.Add(time.Duration(i)*40*time.Millisecond))
+	}
+	if p := c.jitterPeakMs(media); p > 5 {
+		t.Fatalf("startup burst counted: peak = %.2f ms", p)
 	}
 }
