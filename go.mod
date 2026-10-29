@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/bluenviron/gortsplib/v5 v5.6.7
-	github.com/bluenviron/mediacommon/v2 v2.9.6
-	github.com/pion/rtp v1.10.5
+	github.com/bluenviron/mediacommon/v2 v2.9.7
+	github.com/pion/rtp v1.10.6
 	github.com/rs/zerolog v1.35.1
 	github.com/urfave/cli/v2 v2.27.7
 )
